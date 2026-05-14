@@ -45,6 +45,9 @@ public class UserController {
     ) {
         String uid = (String) authentication.getPrincipal();
         String email = (String) request.getAttribute("clerk_email");
+        if ((email == null || email.isBlank()) && registerRequest != null) {
+            email = registerRequest.email();
+        }
 
         String finalName = (String) request.getAttribute("clerk_name");
         if ((finalName == null || finalName.isBlank()) && registerRequest != null) {

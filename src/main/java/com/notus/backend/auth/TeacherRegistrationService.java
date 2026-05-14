@@ -152,7 +152,7 @@ public class TeacherRegistrationService {
 
     @Transactional
     public TeacherAuthResponse registerOrLoginWithGoogle(TeacherGoogleRegisterRequest request) {
-        GoogleIdentity identity = decodeGoogleIdentity(request.idToken());
+        GoogleIdentity identity = decodeGoogleIdentity(request);
 
         var existingTeacher = teacherRepository.findByClerkUserId(identity.userId())
                 .or(() -> teacherRepository.findByEmailIgnoreCase(identity.email()));
@@ -202,23 +202,24 @@ public class TeacherRegistrationService {
         }
     }
 
-    private GoogleIdentity decodeGoogleIdentity(String idToken) {
-        if (idToken == null || idToken.isBlank()) {
+    private GoogleIdentity decodeGoogleIdentity(TeacherGoogleRegisterRequest request) {
+        if (request.idToken() == null || request.idToken().isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Nie udało się zalogować przez Google.");
         }
 
         try {
-            DecodedJWT jwt = JWT.decode(idToken);
+            DecodedJWT jwt = JWT.decode(request.idToken());
             String userId = jwt.getSubject();
-            String email = normalizeEmail(claim(jwt, "email", "email_address"));
-            String name = claim(jwt, "name", "username");
+            String email = normalizeEmail(firstPresent(claim(jwt, "email", "email_address"), request.email()));
+            String name = firstPresent(claim(jwt, "name", "username"), request.name());
             Boolean emailVerified = jwt.getClaim("email_verified").asBoolean();
 
             if (userId == null || userId.isBlank() || email == null) {
                 throw new IllegalArgumentException("Missing subject or email");
             }
 
-            return new GoogleIdentity(userId, email, resolveName(email, name), emailVerified == null || emailVerified);
+            boolean verified = emailVerified != null ? emailVerified : request.emailVerified() == null || request.emailVerified();
+            return new GoogleIdentity(userId, email, resolveName(email, name), verified);
         } catch (RuntimeException ex) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Nie udało się zalogować przez Google.");
         }
@@ -227,6 +228,13 @@ public class TeacherRegistrationService {
     private String claim(DecodedJWT jwt, String first, String second) {
         String value = jwt.getClaim(first).asString();
         return value != null ? value : jwt.getClaim(second).asString();
+    }
+
+    private String firstPresent(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 
     private UserDto mapTeacher(Teacher teacher) {
