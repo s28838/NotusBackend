@@ -7,6 +7,9 @@ public record GradeTableRowResponse(
         LocalDate date,
         String value,
         double numericValue,
+        Integer weight,
+        String sourceType,
+        Long sourceId,
         String source,
         String comment
 ) {}

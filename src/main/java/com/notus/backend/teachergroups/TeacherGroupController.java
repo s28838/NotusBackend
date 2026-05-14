@@ -1,5 +1,10 @@
 package com.notus.backend.teachergroups;
 
+import com.notus.backend.grades.GradeService;
+import com.notus.backend.grades.dto.CreateGradeRequest;
+import com.notus.backend.grades.dto.DeleteGradeResponse;
+import com.notus.backend.grades.dto.GradeResponse;
+import com.notus.backend.grades.dto.UpdateGradeRequest;
 import com.notus.backend.teachergroups.dto.*;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -15,15 +20,18 @@ public class TeacherGroupController {
     private final GroupInvitationService invitationService;
     private final GroupMembershipService membershipService;
     private final TeacherStudentSummaryService summaryService;
+    private final GradeService gradeService;
 
     public TeacherGroupController(TeacherGroupService groupService,
                                   GroupInvitationService invitationService,
                                   GroupMembershipService membershipService,
-                                  TeacherStudentSummaryService summaryService) {
+                                  TeacherStudentSummaryService summaryService,
+                                  GradeService gradeService) {
         this.groupService = groupService;
         this.invitationService = invitationService;
         this.membershipService = membershipService;
         this.summaryService = summaryService;
+        this.gradeService = gradeService;
     }
 
     @GetMapping
@@ -92,5 +100,30 @@ public class TeacherGroupController {
                                                   @PathVariable Long groupId,
                                                   @PathVariable Long studentId) {
         return summaryService.grades(principal.getName(), groupId, studentId);
+    }
+
+    @PostMapping("/{groupId}/students/{studentId}/grades")
+    public GradeResponse createGrade(Principal principal,
+                                     @PathVariable Long groupId,
+                                     @PathVariable Long studentId,
+                                     @RequestBody CreateGradeRequest request) {
+        return gradeService.createManualGrade(principal.getName(), groupId, studentId, request);
+    }
+
+    @PutMapping("/{groupId}/students/{studentId}/grades/{gradeId}")
+    public GradeResponse updateGrade(Principal principal,
+                                     @PathVariable Long groupId,
+                                     @PathVariable Long studentId,
+                                     @PathVariable Long gradeId,
+                                     @RequestBody UpdateGradeRequest request) {
+        return gradeService.updateGrade(principal.getName(), groupId, studentId, gradeId, request);
+    }
+
+    @DeleteMapping("/{groupId}/students/{studentId}/grades/{gradeId}")
+    public DeleteGradeResponse deleteGrade(Principal principal,
+                                           @PathVariable Long groupId,
+                                           @PathVariable Long studentId,
+                                           @PathVariable Long gradeId) {
+        return gradeService.deleteGrade(principal.getName(), groupId, studentId, gradeId);
     }
 }

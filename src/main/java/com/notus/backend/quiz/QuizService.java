@@ -3,6 +3,8 @@ package com.notus.backend.quiz;
 import com.notus.backend.quiz.dto.QuestionDto;
 import com.notus.backend.quiz.dto.QuizDetailsDto;
 import com.notus.backend.quiz.dto.QuizResponse;
+import com.notus.backend.teachergroups.TeacherGroup;
+import com.notus.backend.teachergroups.TeacherGroupRepository;
 import com.notus.backend.users.Teacher;
 import com.notus.backend.users.TeacherRepository;
 import org.springframework.stereotype.Service;
@@ -17,15 +19,18 @@ public class QuizService {
 
     private final QuizRepository quizRepository;
     private final TeacherRepository teacherRepository;
+    private final TeacherGroupRepository teacherGroupRepository;
     private final QuizAssignmentRepository quizAssignmentRepository;
     private final QuizSubmissionRepository quizSubmissionRepository;
 
     public QuizService(QuizRepository quizRepository,
                        TeacherRepository teacherRepository,
+                       TeacherGroupRepository teacherGroupRepository,
                        QuizAssignmentRepository quizAssignmentRepository,
                        QuizSubmissionRepository quizSubmissionRepository) {
         this.quizRepository = quizRepository;
         this.teacherRepository = teacherRepository;
+        this.teacherGroupRepository = teacherGroupRepository;
         this.quizAssignmentRepository = quizAssignmentRepository;
         this.quizSubmissionRepository = quizSubmissionRepository;
     }
@@ -54,6 +59,10 @@ public class QuizService {
                 quiz.getDescription(),
                 quiz.getCreatedAt(),
                 quiz.getVersion(),
+                quiz.getGroup() != null ? quiz.getGroup().getId() : null,
+                quiz.isCountAsGrade(),
+                quiz.getGradeWeight(),
+                quiz.getGradeSemester(),
                 quiz.getQuestions(),
                 hasSubmissions
         );
@@ -82,6 +91,7 @@ public class QuizService {
         quiz.setTitle(dto.getTitle());
         quiz.setDescription(dto.getDescription() != null ? dto.getDescription() : "");
         quiz.setCreatedAt(Instant.now());
+        applyGradeSettings(quiz, teacher, dto);
         applyQuestionsFromDto(quiz, dto.getQuestions());
         return quizRepository.save(quiz);
     }
@@ -119,6 +129,7 @@ public class QuizService {
             // Safe to update in-place — no student has answered yet
             quiz.setTitle(dto.getTitle());
             if (dto.getDescription() != null) quiz.setDescription(dto.getDescription());
+            applyGradeSettings(quiz, quiz.getTeacher(), dto);
             applyQuestionsFromDto(quiz, dto.getQuestions());
             Quiz saved = quizRepository.save(quiz);
             return toDetailsDto(saved, false);
@@ -132,6 +143,7 @@ public class QuizService {
         newQuiz.setCreatedAt(Instant.now());
         newQuiz.setVersion(quiz.getVersion() + 1);
         newQuiz.setParentQuizId(quiz.getId());
+        applyGradeSettings(newQuiz, quiz.getTeacher(), dto);
         applyQuestionsFromDto(newQuiz, dto.getQuestions());
         Quiz savedNew = quizRepository.save(newQuiz);
 
@@ -148,5 +160,28 @@ public class QuizService {
         quizRepository.save(quiz);
 
         return toDetailsDto(savedNew, false);
+    }
+
+    private void applyGradeSettings(Quiz quiz, Teacher teacher, QuizResponse dto) {
+        if (dto.getGroupId() != null) {
+            TeacherGroup group = teacherGroupRepository.findByIdAndTeacherAndActiveTrue(dto.getGroupId(), teacher)
+                    .orElseThrow(() -> new IllegalArgumentException("Grupa nie istnieje albo nie należy do nauczyciela"));
+            quiz.setGroup(group);
+        }
+        boolean countAsGrade = Boolean.TRUE.equals(dto.getCountAsGrade());
+        quiz.setCountAsGrade(countAsGrade);
+        if (countAsGrade) {
+            if (dto.getGradeWeight() == null || dto.getGradeWeight() <= 0) {
+                throw new IllegalArgumentException("Waga oceny z quizu musi być większa od 0");
+            }
+            if (dto.getSemester() == null || dto.getSemester().isBlank()) {
+                throw new IllegalArgumentException("Semestr oceny z quizu jest wymagany");
+            }
+            quiz.setGradeWeight(dto.getGradeWeight());
+            quiz.setGradeSemester(dto.getSemester().trim());
+        } else {
+            quiz.setGradeWeight(null);
+            quiz.setGradeSemester(null);
+        }
     }
 }

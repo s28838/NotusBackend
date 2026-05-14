@@ -1,5 +1,6 @@
 package com.notus.backend.quiz;
 
+import com.notus.backend.teachergroups.TeacherGroup;
 import com.notus.backend.users.Teacher;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -38,6 +39,19 @@ public class Quiz {
 
     @Column(name = "parent_quiz_id")
     private Long parentQuizId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private TeacherGroup group;
+
+    @Column(name = "count_as_grade", nullable = false, columnDefinition = "boolean default false")
+    private boolean countAsGrade = false;
+
+    @Column(name = "grade_weight")
+    private Integer gradeWeight;
+
+    @Column(name = "grade_semester")
+    private String gradeSemester;
 
     @Column(nullable = false, columnDefinition = "boolean default false")
     private boolean archived = false;

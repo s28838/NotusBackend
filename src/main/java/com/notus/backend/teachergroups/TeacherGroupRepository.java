@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface TeacherGroupRepository extends JpaRepository<TeacherGroup, Long> {
     List<TeacherGroup> findByTeacherAndActiveTrueOrderByCreatedAtDesc(Teacher teacher);
     Optional<TeacherGroup> findByIdAndTeacherAndActiveTrue(Long id, Teacher teacher);
+    List<TeacherGroup> findByTeacherAndSubjectIgnoreCaseAndActiveTrue(Teacher teacher, String subject);
 }

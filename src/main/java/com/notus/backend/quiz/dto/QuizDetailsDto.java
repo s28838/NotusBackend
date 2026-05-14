@@ -11,6 +11,10 @@ public record QuizDetailsDto(
         String description,
         Instant createdAt,
         int version,
+        Long groupId,
+        boolean countAsGrade,
+        Integer gradeWeight,
+        String semester,
         List<QuizQuestion> questions,
         boolean hasSubmissions
 ) {}

@@ -1,8 +1,15 @@
 package com.notus.backend.quiz;
 
+import com.notus.backend.grades.GradeService;
+import com.notus.backend.grades.QuizGradeCalculator;
+import com.notus.backend.grades.dto.GradeResponse;
 import com.notus.backend.quiz.dto.*;
 import com.notus.backend.schedule.Schedule;
 import com.notus.backend.schedule.ScheduleRepository;
+import com.notus.backend.teachergroups.GroupMembershipRepository;
+import com.notus.backend.teachergroups.GroupMembershipStatus;
+import com.notus.backend.teachergroups.TeacherGroup;
+import com.notus.backend.teachergroups.TeacherGroupRepository;
 import com.notus.backend.users.Student;
 import com.notus.backend.users.StudentRepository;
 import com.notus.backend.users.Teacher;
@@ -28,6 +35,10 @@ public class QuizAssignmentService {
     private final ScheduleRepository scheduleRepository;
     private final TeacherRepository teacherRepository;
     private final StudentRepository studentRepository;
+    private final TeacherGroupRepository teacherGroupRepository;
+    private final GroupMembershipRepository groupMembershipRepository;
+    private final GradeService gradeService;
+    private final QuizGradeCalculator quizGradeCalculator;
 
     public QuizAssignmentService(
             QuizAssignmentRepository assignmentRepository,
@@ -36,7 +47,11 @@ public class QuizAssignmentService {
             QuizRepository quizRepository,
             ScheduleRepository scheduleRepository,
             TeacherRepository teacherRepository,
-            StudentRepository studentRepository) {
+            StudentRepository studentRepository,
+            TeacherGroupRepository teacherGroupRepository,
+            GroupMembershipRepository groupMembershipRepository,
+            GradeService gradeService,
+            QuizGradeCalculator quizGradeCalculator) {
         this.assignmentRepository = assignmentRepository;
         this.submissionRepository = submissionRepository;
         this.answerRepository = answerRepository;
@@ -44,6 +59,10 @@ public class QuizAssignmentService {
         this.scheduleRepository = scheduleRepository;
         this.teacherRepository = teacherRepository;
         this.studentRepository = studentRepository;
+        this.teacherGroupRepository = teacherGroupRepository;
+        this.groupMembershipRepository = groupMembershipRepository;
+        this.gradeService = gradeService;
+        this.quizGradeCalculator = quizGradeCalculator;
     }
 
     // --- Teacher: assign quiz to a schedule lesson ---
@@ -162,19 +181,21 @@ public class QuizAssignmentService {
         Student student = getStudent(studentClerkId);
         QuizAssignment assignment = getAssignment(assignmentId);
 
-        if (submissionRepository.existsByAssignmentAndStudent(assignment, student)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Już odpowiedziałeś na ten quiz");
-        }
-
         List<QuizQuestion> questions = assignment.getQuiz().getQuestions();
         Map<Long, String> answers = req.answers() != null ? req.answers() : Map.of();
 
         int score = 0;
         boolean hasOpenQuestions = false;
 
-        QuizSubmission submission = new QuizSubmission();
-        submission.setAssignment(assignment);
-        submission.setStudent(student);
+        QuizSubmission submission = submissionRepository.findByAssignmentAndStudent(assignment, student)
+                .orElseGet(QuizSubmission::new);
+        boolean retake = submission.getId() != null;
+        if (retake) {
+            answerRepository.deleteAll(answerRepository.findBySubmission(submission));
+        } else {
+            submission.setAssignment(assignment);
+            submission.setStudent(student);
+        }
         submission.setSubmittedAt(Instant.now());
         submission.setTotal(questions.size());
         QuizSubmission saved = submissionRepository.save(submission);
@@ -205,7 +226,8 @@ public class QuizAssignmentService {
         saved.setPendingOpenReview(hasOpenQuestions);
         submissionRepository.save(saved);
 
-        return new SubmitResultDto(score, questions.size());
+        GradeResponse grade = hasOpenQuestions ? null : createGradeIfEnabled(assignment, student, score, questions.size());
+        return new SubmitResultDto(score, questions.size(), percentage(score, questions.size()), grade != null, grade);
     }
 
     // --- Teacher: get open answers for review ---
@@ -292,6 +314,7 @@ public class QuizAssignmentService {
         submission.setReviewedAt(Instant.now());
         submission.setNotificationSeen(false);
         submissionRepository.save(submission);
+        createGradeIfEnabled(submission.getAssignment(), submission.getStudent(), submission.getScore(), submission.getTotal());
     }
 
     // --- Student: get new review notifications ---
@@ -427,5 +450,58 @@ public class QuizAssignmentService {
         if (instant == null) return "–";
         LocalDate date = instant.atZone(ZoneOffset.UTC).toLocalDate();
         return date.toString();
+    }
+
+    private GradeResponse createGradeIfEnabled(QuizAssignment assignment, Student student, int score, int total) {
+        Quiz quiz = assignment.getQuiz();
+        if (!quiz.isCountAsGrade()) {
+            return null;
+        }
+        TeacherGroup group = resolveTeacherGroup(assignment, student);
+        double percentage = percentage(score, total);
+        String value = quizGradeCalculator.gradeForPercentage(percentage);
+        return gradeService.createOrUpdateQuizGrade(
+                group,
+                student,
+                quiz.getId(),
+                value,
+                quiz.getGradeWeight(),
+                quiz.getGradeSemester(),
+                "Quiz",
+                quiz.getTitle(),
+                "Ocena automatyczna z quizu"
+        );
+    }
+
+    private TeacherGroup resolveTeacherGroup(QuizAssignment assignment, Student student) {
+        Quiz quiz = assignment.getQuiz();
+        if (quiz.getGroup() != null) {
+            assertStudentInGroup(quiz.getGroup(), student);
+            return quiz.getGroup();
+        }
+
+        Schedule schedule = scheduleRepository.findById(assignment.getScheduleId()).orElse(null);
+        if (schedule != null && schedule.getSubject() != null) {
+            List<TeacherGroup> groups = teacherGroupRepository.findByTeacherAndSubjectIgnoreCaseAndActiveTrue(assignment.getTeacher(), schedule.getSubject());
+            return groups.stream()
+                    .filter(group -> groupMembershipRepository.findByGroupAndStudentAndStatus(group, student, GroupMembershipStatus.ACTIVE).isPresent())
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Uczeń nie należy do grupy quizu."));
+        }
+
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quiz nie jest przypisany do grupy.");
+    }
+
+    private void assertStudentInGroup(TeacherGroup group, Student student) {
+        if (groupMembershipRepository.findByGroupAndStudentAndStatus(group, student, GroupMembershipStatus.ACTIVE).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Uczeń nie należy do grupy quizu.");
+        }
+    }
+
+    private double percentage(int score, int total) {
+        if (total <= 0) {
+            return 0.0;
+        }
+        return Math.round((score * 1000.0) / total) / 10.0;
     }
 }

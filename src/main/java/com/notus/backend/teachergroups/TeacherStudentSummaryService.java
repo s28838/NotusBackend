@@ -4,6 +4,7 @@ import com.notus.backend.attendance.AttendanceRecordRepository;
 import com.notus.backend.attendance.AttendanceSession;
 import com.notus.backend.attendance.AttendanceSessionRepository;
 import com.notus.backend.grades.Grade;
+import com.notus.backend.grades.GradeAverageCalculator;
 import com.notus.backend.grades.GradeRepository;
 import com.notus.backend.teachergroups.dto.*;
 import com.notus.backend.users.Student;
@@ -15,7 +16,6 @@ import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -24,17 +24,20 @@ public class TeacherStudentSummaryService {
     private final AttendanceSessionRepository sessionRepository;
     private final AttendanceRecordRepository recordRepository;
     private final GradeRepository gradeRepository;
+    private final GradeAverageCalculator averageCalculator;
     private final TeacherGroupService groupService;
     private final GroupMembershipService membershipService;
 
     public TeacherStudentSummaryService(AttendanceSessionRepository sessionRepository,
                                         AttendanceRecordRepository recordRepository,
                                         GradeRepository gradeRepository,
+                                        GradeAverageCalculator averageCalculator,
                                         TeacherGroupService groupService,
                                         GroupMembershipService membershipService) {
         this.sessionRepository = sessionRepository;
         this.recordRepository = recordRepository;
         this.gradeRepository = gradeRepository;
+        this.averageCalculator = averageCalculator;
         this.groupService = groupService;
         this.membershipService = membershipService;
     }
@@ -76,12 +79,10 @@ public class TeacherStudentSummaryService {
         GroupMembership membership = membershipService.requireActiveMembership(group, studentId);
         Student student = membership.getStudent();
 
-        List<Grade> grades = gradeRepository.findByClerkUserIdOrderByIssueDateDesc(student.getClerkUserId()).stream()
-                .filter(grade -> grade.getSubject() == null || group.getSubject() == null || grade.getSubject().equalsIgnoreCase(group.getSubject()))
-                .toList();
+        List<Grade> grades = gradeRepository.findByGroupAndStudentAndDeletedAtIsNullOrderByGradeDateDesc(group, student);
 
         Map<String, List<Grade>> grouped = grades.stream()
-                .collect(Collectors.groupingBy(grade -> semesterFor(grade.getIssueDate().getMonthValue())));
+                .collect(Collectors.groupingBy(Grade::getSemester));
 
         List<SemesterGradesResponse> semesters = grouped.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -98,7 +99,7 @@ public class TeacherStudentSummaryService {
         return new StudentGradesBySemesterResponse(
                 student.getId(),
                 displayName(membership),
-                round2(average(grades)),
+                average(grades),
                 semesters
         );
     }
@@ -106,11 +107,7 @@ public class TeacherStudentSummaryService {
     public GroupStudentTableRowResponse toStudentRow(TeacherGroup group, GroupMembership membership) {
         Student student = membership.getStudent();
         StudentAttendanceTableResponse attendance = attendanceForMembership(group, membership);
-        double averageGrade = round2(average(
-                gradeRepository.findByClerkUserIdOrderByIssueDateDesc(student.getClerkUserId()).stream()
-                        .filter(grade -> grade.getSubject() == null || group.getSubject() == null || grade.getSubject().equalsIgnoreCase(group.getSubject()))
-                        .toList()
-        ));
+        double averageGrade = average(gradeRepository.findByGroupAndStudentAndDeletedAtIsNullOrderByGradeDateDesc(group, student));
 
         return new GroupStudentTableRowResponse(
                 student.getId(),
@@ -143,53 +140,35 @@ public class TeacherStudentSummaryService {
     }
 
     private double average(List<Grade> grades) {
-        List<Double> values = grades.stream()
-                .map(grade -> numericValue(grade.getValue()))
-                .filter(Objects::nonNull)
-                .toList();
-        if (values.isEmpty()) {
-            return 0.0;
-        }
-        return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        var average = averageCalculator.weightedAverage(grades);
+        return average == null ? 0.0 : average.doubleValue();
     }
 
     private GradeTableRowResponse toGradeRow(Grade grade) {
-        double numeric = Objects.requireNonNullElse(numericValue(grade.getValue()), 0.0);
         return new GradeTableRowResponse(
                 grade.getId(),
-                grade.getIssueDate().toLocalDate(),
+                grade.getGradeDate(),
                 grade.getValue(),
-                numeric,
-                grade.getSubject(),
-                ""
+                grade.getNumericValue() != null ? grade.getNumericValue().doubleValue() : 0.0,
+                grade.getWeight(),
+                grade.getSourceType(),
+                grade.getSourceId(),
+                sourceLabel(grade),
+                grade.getComment()
         );
     }
 
-    private Double numericValue(String value) {
-        if (value == null) {
-            return null;
+    private String sourceLabel(Grade grade) {
+        if (hasText(grade.getTitle()) && hasText(grade.getDescription())) {
+            return grade.getTitle() + ": " + grade.getDescription();
         }
-        return switch (value.trim()) {
-            case "6" -> 6.0;
-            case "5+" -> 5.5;
-            case "5" -> 5.0;
-            case "5-" -> 4.75;
-            case "4+" -> 4.5;
-            case "4" -> 4.0;
-            case "4-" -> 3.75;
-            case "3+" -> 3.5;
-            case "3" -> 3.0;
-            case "3-" -> 2.75;
-            case "2+" -> 2.5;
-            case "2" -> 2.0;
-            case "2-" -> 1.75;
-            case "1" -> 1.0;
-            default -> null;
-        };
-    }
-
-    private String semesterFor(int month) {
-        return month >= 2 && month <= 8 ? "2" : "1";
+        if (hasText(grade.getTitle())) {
+            return grade.getTitle();
+        }
+        if (hasText(grade.getDescription())) {
+            return grade.getDescription();
+        }
+        return grade.getSubject();
     }
 
     private LocalDate toLocalDate(AttendanceSession session) {
