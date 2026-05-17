@@ -13,13 +13,22 @@ import java.util.List;
 public class StudentTeacherGroupController {
 
     private final GroupMembershipService membershipService;
+    private final TeacherStudentSummaryService summaryService;
 
-    public StudentTeacherGroupController(GroupMembershipService membershipService) {
+    public StudentTeacherGroupController(GroupMembershipService membershipService,
+                                         TeacherStudentSummaryService summaryService) {
         this.membershipService = membershipService;
+        this.summaryService = summaryService;
     }
 
     @GetMapping
     public List<StudentGroupResponse> list(Principal principal) {
         return membershipService.listStudentGroups(principal.getName());
+    }
+
+    @GetMapping("/{groupId}/grades")
+    public com.notus.backend.teachergroups.dto.StudentGradesBySemesterResponse grades(Principal principal,
+                                                                                      @org.springframework.web.bind.annotation.PathVariable Long groupId) {
+        return summaryService.studentGrades(principal.getName(), groupId);
     }
 }

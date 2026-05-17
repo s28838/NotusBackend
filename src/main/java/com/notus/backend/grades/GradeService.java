@@ -143,8 +143,10 @@ public class GradeService {
         grade.setTitle(title);
         grade.setDescription(description);
         grade.setComment(comment);
-        grade.setGradeDate(gradeDate != null ? gradeDate : LocalDate.now());
-        grade.setIssueDate((gradeDate != null ? gradeDate : LocalDate.now()).atStartOfDay());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate resolvedGradeDate = gradeDate != null ? gradeDate : now.toLocalDate();
+        grade.setGradeDate(resolvedGradeDate);
+        grade.setIssueDate(resolvedGradeDate.atTime(now.toLocalTime()));
         if (grade.getCreatedAt() == null) {
             grade.setCreatedAt(LocalDateTime.now());
         }
@@ -170,32 +172,31 @@ public class GradeService {
         );
     }
 
+    @Transactional(readOnly = true)
     public List<GradeDto> getRecentGrades(String clerkUserId) {
-        // Dodaję testowe dane dla konta, które jeszcze ich nie ma, aby widok działał poprawnie bez edycji po stronie wykładowcy
-        List<Grade> grades = gradeRepository.findByClerkUserIdOrderByIssueDateDesc(clerkUserId);
-        
-        if (grades.isEmpty()) {
-            Grade dummy1 = new Grade();
-            dummy1.setClerkUserId(clerkUserId);
-            dummy1.setSubject("Architektura Komputerów");
-            dummy1.setValue("5.0");
-            dummy1.setIssueDate(LocalDateTime.now().minusHours(2));
-            dummy1.setNew(true);
-            
-            Grade dummy2 = new Grade();
-            dummy2.setClerkUserId(clerkUserId);
-            dummy2.setSubject("Algorytmy i Struktury Danych");
-            dummy2.setValue("4.5");
-            dummy2.setIssueDate(LocalDateTime.now().minusDays(1));
-            dummy2.setNew(false);
-            
-            gradeRepository.saveAll(List.of(dummy1, dummy2));
-            grades = gradeRepository.findByClerkUserIdOrderByIssueDateDesc(clerkUserId);
-        }
-
-        return grades.stream()
-                .map(g -> new GradeDto(g.getId(), g.getSubject(), g.getValue(), g.getIssueDate(), g.isNew()))
+        return gradeRepository.findByClerkUserIdAndDeletedAtIsNullOrderByIssueDateDesc(clerkUserId).stream()
+                .map(g -> new GradeDto(
+                        g.getId(),
+                        g.getGroup() != null ? g.getGroup().getId() : null,
+                        g.getGroup() != null ? g.getGroup().getName() : null,
+                        g.getSubject(),
+                        g.getValue(),
+                        g.getIssueDate(),
+                        g.isNew()
+                ))
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void markSeen(String clerkUserId, Long gradeId) {
+        Grade grade = gradeRepository.findById(gradeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ocena nie istnieje."));
+        if (!grade.getClerkUserId().equals(clerkUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Nie masz dostępu do tej oceny.");
+        }
+        grade.setNew(false);
+        grade.setUpdatedAt(LocalDateTime.now());
+        gradeRepository.save(grade);
     }
 
     private void publishGradeEvent(Grade grade, String eventName) {

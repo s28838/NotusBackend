@@ -77,6 +77,16 @@ public class TeacherStudentSummaryService {
     public StudentGradesBySemesterResponse grades(String teacherUid, Long groupId, Long studentId) {
         TeacherGroup group = groupService.requireOwnedGroup(teacherUid, groupId);
         GroupMembership membership = membershipService.requireActiveMembership(group, studentId);
+        return gradesForMembership(group, membership);
+    }
+
+    @Transactional(readOnly = true)
+    public StudentGradesBySemesterResponse studentGrades(String studentUid, Long groupId) {
+        GroupMembership membership = membershipService.requireStudentActiveMembership(studentUid, groupId);
+        return gradesForMembership(membership.getGroup(), membership);
+    }
+
+    private StudentGradesBySemesterResponse gradesForMembership(TeacherGroup group, GroupMembership membership) {
         Student student = membership.getStudent();
 
         List<Grade> grades = gradeRepository.findByGroupAndStudentAndDeletedAtIsNullOrderByGradeDateDesc(group, student);
@@ -148,6 +158,7 @@ public class TeacherStudentSummaryService {
         return new GradeTableRowResponse(
                 grade.getId(),
                 grade.getGradeDate(),
+                grade.getIssueDate(),
                 grade.getValue(),
                 grade.getNumericValue() != null ? grade.getNumericValue().doubleValue() : 0.0,
                 grade.getWeight(),

@@ -75,15 +75,17 @@ public class GroupInvitationService {
             if (hasActiveAcceptedInvitation(emailInvitations)) {
                 return new InviteStudentResponse(false, "Ten uczeń jest już w grupie.");
             }
+            Instant emailResendAvailableAt = latestResendAvailableAt(emailInvitations);
             GroupInvitation invitation = emailInvitations.stream()
                     .filter(item -> item.getStatus() != GroupInvitationStatus.ACCEPTED)
                     .findFirst()
                     .orElse(null);
             if (invitation != null && invitation.getStatus() == GroupInvitationStatus.PENDING
                     && invitation.getExpiresAt().isAfter(Instant.now())
-                    && isCoolingDown(invitation)) {
+                    && emailResendAvailableAt != null
+                    && Instant.now().isBefore(emailResendAvailableAt)) {
                 return new InviteStudentResponse(false,
-                        "Zaproszenie na ten email zostało już wysłane. Ponów za " + cooldownLabel(invitation) + ".");
+                        "Zaproszenie na ten email zostało już wysłane. Ponów za " + cooldownLabel(emailResendAvailableAt) + ".");
             }
             if (invitation == null) {
                 invitation = new GroupInvitation();
@@ -183,10 +185,14 @@ public class GroupInvitationService {
         if (invitation.getStatus() == GroupInvitationStatus.ACCEPTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "To zaproszenie zostało już zaakceptowane.");
         }
+        if (hasActiveAcceptedInvitation(invitationsForEmail(group, invitation.getEmail()))
+                || checkExistingStudent(invitation.getEmail(), group) != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten uczeń jest już w grupie.");
+        }
 
         Instant now = Instant.now();
-        Instant availableAt = resendAvailableAt(invitation);
-        if (invitation.getStatus() != GroupInvitationStatus.FAILED && now.isBefore(availableAt)) {
+        Instant availableAt = latestResendAvailableAt(invitationsForEmail(group, invitation.getEmail()));
+        if (invitation.getStatus() != GroupInvitationStatus.FAILED && availableAt != null && now.isBefore(availableAt)) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Zaproszenie można ponowić po upływie 24 godzin od ostatniej wysyłki.");
         }
@@ -243,7 +249,7 @@ public class GroupInvitationService {
                 invitation.getStatus(),
                 invitation.getCreatedAt(),
                 lastSentAt(invitation),
-                resendAvailableAt(invitation),
+                latestResendAvailableAt(invitationsForEmail(invitation.getGroup(), invitation.getEmail())),
                 invitation.getExpiresAt(),
                 invitation.getAcceptedAt(),
                 message
@@ -251,11 +257,12 @@ public class GroupInvitationService {
     }
 
     private Instant lastSentAt(GroupInvitation invitation) {
-        return invitation.getLastSentAt() != null ? invitation.getLastSentAt() : invitation.getCreatedAt();
+        return invitation.getLastSentAt();
     }
 
     private Instant resendAvailableAt(GroupInvitation invitation) {
-        return lastSentAt(invitation).plus(RESEND_COOLDOWN_HOURS, ChronoUnit.HOURS);
+        Instant lastSentAt = lastSentAt(invitation);
+        return lastSentAt == null ? null : lastSentAt.plus(RESEND_COOLDOWN_HOURS, ChronoUnit.HOURS);
     }
 
     private List<GroupInvitation> invitationsForEmail(TeacherGroup group, String email) {
@@ -281,19 +288,19 @@ public class GroupInvitationService {
         invitation.setTokenHash(hashService.sha256(rawToken));
         invitation.setStatus(GroupInvitationStatus.PENDING);
         invitation.setExpiresAt(now.plus(7, ChronoUnit.DAYS));
-        invitation.setLastSentAt(now);
         if (invitation.getCreatedAt() == null) {
             invitation.setCreatedAt(now);
         }
         if (invitation.getCreatedByTeacher() == null) {
             invitation.setCreatedByTeacher(group.getTeacher());
         }
-        invitation = invitationRepository.save(invitation);
-        cancelDuplicatePendingInvitations(invitation);
-
         String inviteLink = frontendBaseUrl + "/invite/group?token=" + rawToken;
         try {
             emailService.sendGroupInvitation(invitation.getEmail(), group.getName(), group.getTeacher().getName(), inviteLink);
+            invitation.setLastSentAt(Instant.now());
+            invitation.setStatus(GroupInvitationStatus.PENDING);
+            invitation = invitationRepository.save(invitation);
+            cancelDuplicatePendingInvitations(invitation);
         } catch (RuntimeException ex) {
             invitation.setStatus(GroupInvitationStatus.FAILED);
             invitationRepository.save(invitation);
@@ -302,11 +309,12 @@ public class GroupInvitationService {
     }
 
     private boolean isCoolingDown(GroupInvitation invitation) {
-        return Instant.now().isBefore(resendAvailableAt(invitation));
+        Instant availableAt = resendAvailableAt(invitation);
+        return availableAt != null && Instant.now().isBefore(availableAt);
     }
 
-    private String cooldownLabel(GroupInvitation invitation) {
-        long minutes = Math.max(1, ChronoUnit.MINUTES.between(Instant.now(), resendAvailableAt(invitation)));
+    private String cooldownLabel(Instant availableAt) {
+        long minutes = Math.max(1, ChronoUnit.MINUTES.between(Instant.now(), availableAt));
         long hours = minutes / 60;
         long restMinutes = minutes % 60;
         if (hours <= 0) {
@@ -316,6 +324,14 @@ public class GroupInvitationService {
             return hours + " godz.";
         }
         return hours + " godz. " + restMinutes + " min";
+    }
+
+    private Instant latestResendAvailableAt(List<GroupInvitation> invitations) {
+        return invitations.stream()
+                .map(this::resendAvailableAt)
+                .filter(java.util.Objects::nonNull)
+                .max(Instant::compareTo)
+                .orElse(null);
     }
 
     private void cancelDuplicatePendingInvitations(GroupInvitation activeInvitation) {

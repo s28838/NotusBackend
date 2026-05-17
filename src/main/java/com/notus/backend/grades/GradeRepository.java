@@ -12,6 +12,7 @@ import java.util.Optional;
 @Repository
 public interface GradeRepository extends JpaRepository<Grade, Long> {
     List<Grade> findByClerkUserIdOrderByIssueDateDesc(String clerkUserId);
+    List<Grade> findByClerkUserIdAndDeletedAtIsNullOrderByIssueDateDesc(String clerkUserId);
     List<Grade> findByGroupAndStudentAndDeletedAtIsNullOrderByGradeDateDesc(TeacherGroup group, Student student);
     Optional<Grade> findByIdAndGroupAndStudentAndDeletedAtIsNull(Long id, TeacherGroup group, Student student);
     Optional<Grade> findByStudentAndGroupAndSourceTypeAndSourceIdAndDeletedAtIsNull(Student student, TeacherGroup group, String sourceType, Long sourceId);

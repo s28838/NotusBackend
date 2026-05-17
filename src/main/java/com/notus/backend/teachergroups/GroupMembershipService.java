@@ -139,6 +139,14 @@ public class GroupMembershipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Uczeń nie należy do tej grupy."));
     }
 
+    @Transactional(readOnly = true)
+    public GroupMembership requireStudentActiveMembership(String studentUid, Long groupId) {
+        Student student = userService.findStudentByUid(studentUid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Wymagane konto ucznia."));
+        return membershipRepository.findByGroupIdAndStudentIdAndStatus(groupId, student.getId(), GroupMembershipStatus.ACTIVE)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Nie należysz do tej grupy."));
+    }
+
     private String trimRequired(String value) {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pole jest wymagane.");
