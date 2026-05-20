@@ -26,17 +26,17 @@ SENTRY_ENVIRONMENT=production
 SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
-Set SMTP variables only when real invitation emails should be sent:
+Set SMTP variables when real invitation and verification emails should be sent. For Brevo, use the SMTP credentials from Brevo, not the normal account password:
 
 ```text
-SMTP_HOST=
+SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
-SMTP_USERNAME=
-SMTP_PASSWORD=
+SMTP_USERNAME=your-brevo-smtp-login
+SMTP_PASSWORD=your-brevo-smtp-key
 SMTP_AUTH=true
 SMTP_STARTTLS_ENABLE=true
 SMTP_STARTTLS_REQUIRED=true
-MAIL_FROM=
+MAIL_FROM=verified-sender@example.com
 MAIL_FROM_NAME=Notus
 ```
 
