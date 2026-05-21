@@ -9,6 +9,7 @@ public record GroupInvitationResponse(
         Long groupId,
         String groupName,
         String email,
+        String invitationLink,
         GroupInvitationStatus status,
         Instant createdAt,
         Instant lastSentAt,

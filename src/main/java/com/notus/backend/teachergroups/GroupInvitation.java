@@ -33,6 +33,9 @@ public class GroupInvitation {
     @Column(name = "token_hash", nullable = false, unique = true)
     private String tokenHash;
 
+    @Column(name = "invitation_link", columnDefinition = "TEXT")
+    private String invitationLink;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private GroupInvitationStatus status = GroupInvitationStatus.PENDING;

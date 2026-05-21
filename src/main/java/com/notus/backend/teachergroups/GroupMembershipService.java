@@ -128,6 +128,7 @@ public class GroupMembershipService {
         invitation.setAcceptedBy(student);
         invitationRepository.save(invitation);
         closeDuplicateInvitations(invitation, student);
+        invitationService.publishInvitationEvent(invitation, "group.invitation_accepted");
         publishGroupStudentEvent(group, membership, "group.student_joined");
 
         return new AcceptGroupInvitationResponse(true, "Dołączyłeś do grupy.", group.getId(), group.getName());
@@ -183,6 +184,7 @@ public class GroupMembershipService {
                     invitation.setAcceptedAt(null);
                     invitation.setAcceptedBy(null);
                     invitationRepository.save(invitation);
+                    invitationService.publishInvitationEvent(invitation, "group.invitation_accepted");
                 });
     }
 
@@ -201,6 +203,7 @@ public class GroupMembershipService {
                     invitation.setAcceptedAt(null);
                     invitation.setAcceptedBy(null);
                     invitationRepository.save(invitation);
+                    invitationService.publishInvitationEvent(invitation, "group.invitation_cancelled");
                 });
     }
 

@@ -38,6 +38,8 @@ class TeacherGroupsServicesTest {
     private GroupInvitationService invitationService;
     @Mock
     private StudentRepository studentRepository;
+    @Mock
+    private TeacherRealtimeService realtimeService;
 
     private Teacher teacher;
     private Student student;
@@ -135,6 +137,7 @@ class TeacherGroupsServicesTest {
                 emailService,
                 studentRepository,
                 membershipRepository,
+                realtimeService,
                 "http://localhost:5173"
         );
         when(groupService.requireOwnedGroup("teacher-uid", 5L)).thenReturn(group);
@@ -152,6 +155,8 @@ class TeacherGroupsServicesTest {
         assertTrue(response.success());
         assertNotEquals(rawToken, invitationCaptor.getValue().getTokenHash());
         assertEquals(new HashService().sha256(rawToken), invitationCaptor.getValue().getTokenHash());
+        assertEquals(linkCaptor.getValue(), invitationCaptor.getValue().getInvitationLink());
+        verify(realtimeService).publishToTeacher(eq("teacher-uid"), eq("group.invitation_created"), any());
     }
 
     @Test
@@ -164,6 +169,7 @@ class TeacherGroupsServicesTest {
                 emailService,
                 studentRepository,
                 membershipRepository,
+                realtimeService,
                 "http://localhost:5173"
         );
         when(groupService.requireOwnedGroup("teacher-uid", 5L)).thenReturn(group);
@@ -178,6 +184,8 @@ class TeacherGroupsServicesTest {
         verify(invitationRepository, atLeastOnce()).save(invitationCaptor.capture());
         assertFalse(response.success());
         assertEquals(GroupInvitationStatus.FAILED, invitationCaptor.getAllValues().getLast().getStatus());
+        assertNotNull(invitationCaptor.getAllValues().getLast().getInvitationLink());
+        verify(realtimeService).publishToTeacher(eq("teacher-uid"), eq("group.invitation_updated"), any());
     }
 
     @Test
@@ -190,6 +198,7 @@ class TeacherGroupsServicesTest {
                 emailService,
                 studentRepository,
                 membershipRepository,
+                realtimeService,
                 "http://localhost:5173"
         );
         GroupInvitation existing = new GroupInvitation();
@@ -225,6 +234,7 @@ class TeacherGroupsServicesTest {
                 emailService,
                 studentRepository,
                 membershipRepository,
+                realtimeService,
                 "http://localhost:5173"
         );
         GroupInvitation existing = new GroupInvitation();

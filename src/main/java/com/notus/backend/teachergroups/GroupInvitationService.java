@@ -1,6 +1,8 @@
 package com.notus.backend.teachergroups;
 
 import com.notus.backend.auth.HashService;
+import com.notus.backend.realtime.TeacherRealtimeService;
+import com.notus.backend.realtime.dto.TeacherRealtimeEvent;
 import com.notus.backend.teachergroups.dto.InviteStudentRequest;
 import com.notus.backend.teachergroups.dto.InviteStudentResponse;
 import com.notus.backend.teachergroups.dto.GroupInvitationPreviewResponse;
@@ -21,7 +23,10 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 @Service
@@ -38,6 +43,7 @@ public class GroupInvitationService {
     private final EmailService emailService;
     private final StudentRepository studentRepository;
     private final GroupMembershipRepository membershipRepository;
+    private final TeacherRealtimeService realtimeService;
     private final SecureRandom secureRandom = new SecureRandom();
     private final String frontendBaseUrl;
 
@@ -47,6 +53,7 @@ public class GroupInvitationService {
                                   EmailService emailService,
                                   StudentRepository studentRepository,
                                   GroupMembershipRepository membershipRepository,
+                                  TeacherRealtimeService realtimeService,
                                   @Value("${app.frontend-base-url:http://localhost:5173}") String frontendBaseUrl) {
         this.invitationRepository = invitationRepository;
         this.groupService = groupService;
@@ -54,6 +61,7 @@ public class GroupInvitationService {
         this.emailService = emailService;
         this.studentRepository = studentRepository;
         this.membershipRepository = membershipRepository;
+        this.realtimeService = realtimeService;
         this.frontendBaseUrl = frontendBaseUrl.replaceAll("/+$", "");
     }
 
@@ -91,7 +99,9 @@ public class GroupInvitationService {
                 invitation.setCreatedByTeacher(group.getTeacher());
             }
 
-            sendInvitation(invitation, group, invitation.getId() != null);
+            boolean created = invitation.getId() == null;
+            sendInvitation(invitation, group, !created);
+            publishInvitationEvent(invitation, created ? "group.invitation_created" : "group.invitation_updated");
             return new InviteStudentResponse(true, "Zaproszenie zostało wysłane.");
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().is4xxClientError() && ex.getStatusCode() != HttpStatus.FORBIDDEN) {
@@ -169,7 +179,9 @@ public class GroupInvitationService {
         }
 
         invitation.setStatus(GroupInvitationStatus.CANCELLED);
-        return toResponse(invitationRepository.save(invitation));
+        GroupInvitation saved = invitationRepository.save(invitation);
+        publishInvitationEvent(saved, "group.invitation_cancelled");
+        return toResponse(saved);
     }
 
     @Transactional
@@ -198,6 +210,7 @@ public class GroupInvitationService {
         } catch (RuntimeException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, GENERIC_INVITE_ERROR);
         }
+        publishInvitationEvent(invitation, "group.invitation_updated");
         return toResponse(invitation);
     }
 
@@ -242,6 +255,7 @@ public class GroupInvitationService {
                 invitation.getGroup().getId(),
                 invitation.getGroup().getName(),
                 invitation.getEmail(),
+                invitation.getInvitationLink(),
                 invitation.getStatus(),
                 invitation.getCreatedAt(),
                 lastSentAt(invitation),
@@ -297,6 +311,7 @@ public class GroupInvitationService {
             invitation.setCreatedByTeacher(group.getTeacher());
         }
         String inviteLink = frontendBaseUrl + "/invite/group?token=" + rawToken;
+        invitation.setInvitationLink(inviteLink);
         try {
             emailService.sendGroupInvitation(invitation.getEmail(), group.getName(), group.getTeacher().getName(), inviteLink);
             invitation.setLastSentAt(Instant.now());
@@ -309,6 +324,7 @@ public class GroupInvitationService {
         } catch (RuntimeException ex) {
             invitation.setStatus(GroupInvitationStatus.FAILED);
             invitationRepository.save(invitation);
+            publishInvitationEvent(invitation, "group.invitation_updated");
             throw ex;
         }
     }
@@ -359,6 +375,7 @@ public class GroupInvitationService {
                 .forEach(invitation -> {
                     invitation.setStatus(GroupInvitationStatus.CANCELLED);
                     invitationRepository.save(invitation);
+                    publishInvitationEvent(invitation, "group.invitation_cancelled");
                 });
     }
 
@@ -377,6 +394,32 @@ public class GroupInvitationService {
                     invitation.setAcceptedAt(null);
                     invitation.setAcceptedBy(null);
                     invitationRepository.save(invitation);
+                    publishInvitationEvent(invitation, "group.invitation_cancelled");
                 });
+    }
+
+    public void publishInvitationEvent(GroupInvitation invitation, String eventName) {
+        if (invitation == null || invitation.getGroup() == null || invitation.getGroup().getTeacher() == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("groupId", invitation.getGroup().getId());
+        payload.put("groupName", invitation.getGroup().getName());
+        payload.put("invitationId", invitation.getId());
+        payload.put("email", invitation.getEmail());
+        payload.put("status", invitation.getStatus() != null ? invitation.getStatus().name() : null);
+        payload.put("invitationLink", invitation.getInvitationLink());
+        payload.put("expiresAt", invitation.getExpiresAt());
+        payload.put("acceptedAt", invitation.getAcceptedAt());
+        payload.put("lastSentAt", invitation.getLastSentAt());
+        payload.values().removeIf(Objects::isNull);
+
+        String teacherUid = invitation.getGroup().getTeacher().getClerkUserId();
+        realtimeService.publishToTeacher(
+                teacherUid,
+                eventName,
+                TeacherRealtimeEvent.of(eventName, payload)
+        );
     }
 }
