@@ -208,7 +208,8 @@ public class GroupInvitationService {
         try {
             sendInvitation(invitation, group, true);
         } catch (RuntimeException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, GENERIC_INVITE_ERROR);
+            log.error("Could not resend group invitation {} for group {}", invitationId, groupId, ex);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, GENERIC_INVITE_ERROR, ex);
         }
         publishInvitationEvent(invitation, "group.invitation_updated");
         return toResponse(invitation);
@@ -416,10 +417,21 @@ public class GroupInvitationService {
         payload.values().removeIf(Objects::isNull);
 
         String teacherUid = invitation.getGroup().getTeacher().getClerkUserId();
-        realtimeService.publishToTeacher(
-                teacherUid,
-                eventName,
-                TeacherRealtimeEvent.of(eventName, payload)
-        );
+        if (teacherUid == null || teacherUid.isBlank()) {
+            log.warn("Skipping invitation realtime event {} for invitation {} because teacher uid is missing",
+                    eventName,
+                    invitation.getId());
+            return;
+        }
+
+        try {
+            realtimeService.publishToTeacher(
+                    teacherUid,
+                    eventName,
+                    TeacherRealtimeEvent.of(eventName, payload)
+            );
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish invitation realtime event {} for invitation {}", eventName, invitation.getId(), ex);
+        }
     }
 }

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -66,7 +67,11 @@ public class EmailService {
             throw new IllegalStateException("Could not encode group invitation sender", ex);
         }
 
-        mailSender.send(message);
+        try {
+            mailSender.send(message);
+        } catch (MailException ex) {
+            throw new IllegalStateException("Could not send group invitation email via SMTP", ex);
+        }
         log.info("Group invitation email sent to {} for group {}", email, groupName);
     }
 
