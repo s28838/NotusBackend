@@ -1,5 +1,6 @@
 package com.notus.backend.teachergroups;
 
+import com.notus.backend.email.BrevoEmailClient;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
@@ -22,20 +23,39 @@ public class EmailService {
     private final String mailHost;
     private final String from;
     private final String fromName;
+    private final BrevoEmailClient brevoEmailClient;
 
     public EmailService(ObjectProvider<JavaMailSender> mailSenderProvider,
                         @Value("${spring.mail.host:}") String mailHost,
                         @Value("${notus.mail.from:no-reply@notus.local}") String from,
-                        @Value("${notus.mail.from-name:Notus}") String fromName) {
+                        @Value("${notus.mail.from-name:Notus}") String fromName,
+                        BrevoEmailClient brevoEmailClient) {
         this.mailSenderProvider = mailSenderProvider;
         this.mailHost = mailHost;
         this.from = from;
         this.fromName = fromName;
+        this.brevoEmailClient = brevoEmailClient;
     }
 
     public void sendGroupInvitation(String email, String groupName, String teacherName, String inviteLink) {
+        String textContent = buildTextContent(groupName, teacherName, inviteLink);
+        String htmlContent = buildHtmlContent(groupName, teacherName, inviteLink);
+
+        if (brevoEmailClient.isConfigured()) {
+            brevoEmailClient.sendEmail(
+                    email,
+                    from,
+                    fromName,
+                    "Zaproszenie do grupy " + groupName + " w Notus",
+                    textContent,
+                    htmlContent
+            );
+            log.info("Group invitation email sent to {} for group {} via Brevo API", email, groupName);
+            return;
+        }
+
         if (isSmtpConfigured()) {
-            sendSmtp(email, groupName, teacherName, inviteLink);
+            sendSmtp(email, groupName, textContent, htmlContent);
             return;
         }
 
@@ -48,7 +68,7 @@ public class EmailService {
                 """, email, groupName, teacherName, inviteLink);
     }
 
-    private void sendSmtp(String email, String groupName, String teacherName, String inviteLink) {
+    private void sendSmtp(String email, String groupName, String textContent, String htmlContent) {
         JavaMailSender mailSender = mailSenderProvider.getObject();
         MimeMessage message = mailSender.createMimeMessage();
         try {
@@ -60,7 +80,7 @@ public class EmailService {
             helper.setFrom(from, fromName);
             helper.setTo(email);
             helper.setSubject("Zaproszenie do grupy " + groupName + " w Notus");
-            helper.setText(buildTextContent(groupName, teacherName, inviteLink), buildHtmlContent(groupName, teacherName, inviteLink));
+            helper.setText(textContent, htmlContent);
         } catch (MessagingException ex) {
             throw new IllegalStateException("Could not build group invitation email", ex);
         } catch (java.io.UnsupportedEncodingException ex) {

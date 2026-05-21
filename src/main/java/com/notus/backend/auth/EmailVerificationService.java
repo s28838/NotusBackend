@@ -1,11 +1,13 @@
 package com.notus.backend.auth;
 
+import com.notus.backend.email.BrevoEmailClient;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -21,30 +23,49 @@ public class EmailVerificationService {
     private final String from;
     private final String fromName;
     private final String frontendBaseUrl;
+    private final BrevoEmailClient brevoEmailClient;
 
     public EmailVerificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                                     @Value("${spring.mail.host:}") String mailHost,
                                     @Value("${notus.mail.from:no-reply@notus.local}") String from,
                                     @Value("${notus.mail.from-name:Notus}") String fromName,
-                                    @Value("${app.frontend-base-url:http://localhost:5173}") String frontendBaseUrl) {
+                                    @Value("${app.frontend-base-url:http://localhost:5173}") String frontendBaseUrl,
+                                    BrevoEmailClient brevoEmailClient) {
         this.mailSenderProvider = mailSenderProvider;
         this.mailHost = mailHost;
         this.from = from;
         this.fromName = fromName;
         this.frontendBaseUrl = frontendBaseUrl.replaceAll("/+$", "");
+        this.brevoEmailClient = brevoEmailClient;
     }
 
     public void sendVerificationEmail(String email, String verificationToken) {
         String verificationLink = "%s/verify-email?token=%s".formatted(frontendBaseUrl, verificationToken);
+        String textContent = buildTextContent(verificationLink);
+        String htmlContent = buildHtmlContent(verificationLink);
+
+        if (brevoEmailClient.isConfigured()) {
+            brevoEmailClient.sendEmail(
+                    email,
+                    from,
+                    fromName,
+                    "Potwierdź email w Notus",
+                    textContent,
+                    htmlContent
+            );
+            log.info("Teacher email verification sent to {} via Brevo API", email);
+            return;
+        }
+
         if (isSmtpConfigured()) {
-            sendSmtp(email, verificationLink);
+            sendSmtp(email, textContent, htmlContent);
             return;
         }
 
         log.info("Teacher email verification for {}: {}", email, verificationLink);
     }
 
-    private void sendSmtp(String email, String verificationLink) {
+    private void sendSmtp(String email, String textContent, String htmlContent) {
         JavaMailSender mailSender = mailSenderProvider.getObject();
         MimeMessage message = mailSender.createMimeMessage();
 
@@ -57,14 +78,18 @@ public class EmailVerificationService {
             helper.setFrom(from, fromName);
             helper.setTo(email);
             helper.setSubject("Potwierdź email w Notus");
-            helper.setText(buildTextContent(verificationLink), buildHtmlContent(verificationLink));
+            helper.setText(textContent, htmlContent);
         } catch (MessagingException ex) {
             throw new IllegalStateException("Could not build verification email", ex);
         } catch (java.io.UnsupportedEncodingException ex) {
             throw new IllegalStateException("Could not encode verification email sender", ex);
         }
 
-        mailSender.send(message);
+        try {
+            mailSender.send(message);
+        } catch (MailException ex) {
+            throw new IllegalStateException("Could not send verification email via SMTP", ex);
+        }
         log.info("Teacher email verification sent to {}", email);
     }
 

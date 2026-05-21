@@ -53,3 +53,5 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         value: Notus
+      - key: BREVO_API_KEY
+        sync: false

@@ -38,6 +38,7 @@ SMTP_STARTTLS_ENABLE=true
 SMTP_STARTTLS_REQUIRED=true
 MAIL_FROM=verified-sender@example.com
 MAIL_FROM_NAME=Notus
+BREVO_API_KEY=your-brevo-api-key
 ```
 
 Render injects `PORT`; `application.properties` maps it to `server.port` with a local default of `8080`.

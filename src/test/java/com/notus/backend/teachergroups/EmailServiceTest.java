@@ -1,5 +1,6 @@
 package com.notus.backend.teachergroups;
 
+import com.notus.backend.email.BrevoEmailClient;
 import jakarta.mail.Session;
 import jakarta.mail.Multipart;
 import jakarta.mail.internet.MimeMessage;
@@ -23,8 +24,10 @@ class EmailServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(mailSender);
+        BrevoEmailClient brevoEmailClient = mock(BrevoEmailClient.class);
+        when(brevoEmailClient.isConfigured()).thenReturn(false);
 
-        EmailService service = new EmailService(provider, "smtp-relay.brevo.com", "no-reply@notus.app", "Notus");
+        EmailService service = new EmailService(provider, "smtp-relay.brevo.com", "no-reply@notus.app", "Notus", brevoEmailClient);
 
         service.sendGroupInvitation(
                 "student@example.com",
