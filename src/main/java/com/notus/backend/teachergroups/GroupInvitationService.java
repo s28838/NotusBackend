@@ -11,6 +11,7 @@ import com.notus.backend.users.Role;
 import com.notus.backend.users.Student;
 import com.notus.backend.users.StudentRepository;
 import com.notus.backend.users.Teacher;
+import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -111,6 +112,7 @@ public class GroupInvitationService {
             throw ex;
         } catch (RuntimeException ex) {
             log.error("Could not send group invitation for group {}", groupId, ex);
+            captureInvitationFailure(ex, "group_invitation.invite", groupId);
             return new InviteStudentResponse(false, GENERIC_INVITE_ERROR);
         }
     }
@@ -209,6 +211,7 @@ public class GroupInvitationService {
             sendInvitation(invitation, group, true);
         } catch (RuntimeException ex) {
             log.error("Could not resend group invitation {} for group {}", invitationId, groupId, ex);
+            captureInvitationFailure(ex, "group_invitation.resend", groupId);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, GENERIC_INVITE_ERROR, ex);
         }
         publishInvitationEvent(invitation, "group.invitation_updated");
@@ -358,6 +361,16 @@ public class GroupInvitationService {
 
     private int resendCount(GroupInvitation invitation) {
         return invitation.getResendCount() == null ? 0 : invitation.getResendCount();
+    }
+
+    private void captureInvitationFailure(RuntimeException ex, String operation, Long groupId) {
+        Sentry.withScope(scope -> {
+            scope.setTag("notus.operation", operation);
+            if (groupId != null) {
+                scope.setExtra("groupId", groupId.toString());
+            }
+            Sentry.captureException(ex);
+        });
     }
 
     private void cancelDuplicatePendingInvitations(GroupInvitation activeInvitation) {
