@@ -42,15 +42,15 @@ public class QuizController {
     }
 
     @PostMapping("/save")
-    public Quiz saveQuiz(Principal principal, @RequestBody QuizResponse quizResponse) {
+    public QuizDetailsDto saveQuiz(Principal principal, @RequestBody QuizResponse quizResponse) {
         String uid = principal.getName();
         return quizService.saveQuiz(uid, quizResponse);
     }
 
     @GetMapping("/my")
-    public List<Quiz> getMyQuizzes(Principal principal) {
+    public List<QuizDetailsDto> getMyQuizzes(Principal principal) {
         String uid = principal.getName();
-        List<Quiz> quizzes = quizService.getTeacherQuizzes(uid);
+        List<QuizDetailsDto> quizzes = quizService.getTeacherQuizzes(uid);
         log.debug("Fetching quizzes for UID: [{}], result size: {}", uid, quizzes != null ? quizzes.size() : "null");
         return quizzes;
     }
@@ -118,9 +118,9 @@ public class QuizController {
                 y -= lineHeight * 1.5f;
             }
 
-            List<QuizQuestion> questions = quiz.questions();
+            List<com.notus.backend.quiz.dto.QuizQuestionDto> questions = quiz.questions();
             for (int i = 0; i < questions.size(); i++) {
-                QuizQuestion q = questions.get(i);
+                com.notus.backend.quiz.dto.QuizQuestionDto q = questions.get(i);
 
                 if (y < margin + lineHeight * 6) {
                     cs.close();
@@ -133,13 +133,13 @@ public class QuizController {
                 cs.beginText();
                 cs.setFont(fontBold, 12);
                 cs.newLineAtOffset(margin, y);
-                cs.showText((i + 1) + ". " + sanitize(q.getQuestionText()));
+                cs.showText((i + 1) + ". " + sanitize(q.questionText()));
                 cs.endText();
                 y -= lineHeight;
 
-                if (q.getOptions() != null && !q.getOptions().isEmpty()) {
+                if (q.options() != null && !q.options().isEmpty()) {
                     String[] letters = {"A", "B", "C", "D", "E"};
-                    for (int j = 0; j < q.getOptions().size(); j++) {
+                    for (int j = 0; j < q.options().size(); j++) {
                         if (y < margin + lineHeight * 3) {
                             cs.close();
                             page = new PDPage(PDRectangle.A4);
@@ -151,17 +151,17 @@ public class QuizController {
                         cs.beginText();
                         cs.setFont(fontRegular, 11);
                         cs.newLineAtOffset(margin + 16, y);
-                        cs.showText(letter + ") " + sanitize(q.getOptions().get(j)));
+                        cs.showText(letter + ") " + sanitize(q.options().get(j)));
                         cs.endText();
                         y -= lineHeight;
                     }
                 }
 
-                if (q.getCorrectAnswer() != null && !q.getCorrectAnswer().isBlank()) {
+                if (q.correctAnswer() != null && !q.correctAnswer().isBlank()) {
                     cs.beginText();
                     cs.setFont(fontBold, 10);
                     cs.newLineAtOffset(margin + 16, y);
-                    cs.showText("Odpowiedz: " + sanitize(q.getCorrectAnswer()));
+                    cs.showText("Odpowiedz: " + sanitize(q.correctAnswer()));
                     cs.endText();
                     y -= lineHeight;
                 }

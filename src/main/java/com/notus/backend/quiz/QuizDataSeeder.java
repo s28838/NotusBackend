@@ -2,7 +2,6 @@ package com.notus.backend.quiz;
 
 import com.notus.backend.quiz.dto.QuestionDto;
 import com.notus.backend.quiz.dto.QuizResponse;
-import com.notus.backend.users.Teacher;
 import com.notus.backend.users.TeacherRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +12,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 @ConditionalOnProperty(name = "notus.seed.sample-quiz-enabled", havingValue = "true")
@@ -33,14 +31,13 @@ public class QuizDataSeeder implements CommandLineRunner {
     public void run(String... args) throws Exception {
         String clerkUserId = "user_3BFYEWC78Gr7DaocU0daKeje7XW"; // Clerk ID for "Kamu"
 
-        Optional<Teacher> teacherOpt = teacherRepository.findByClerkUserId(clerkUserId);
+        var teacherOpt = teacherRepository.findByClerkUserId(clerkUserId);
         if (teacherOpt.isEmpty()) {
             log.info("Seeder: teacher {} not found in DB, skipping quiz seeding", clerkUserId);
             return;
         }
 
-        Teacher teacher = teacherOpt.get();
-        List<Quiz> existing = quizService.getTeacherQuizzes(clerkUserId);
+        var existing = quizService.getTeacherQuizzes(clerkUserId);
         if (existing.isEmpty()) {
             log.info("Seeding sample quiz data for teacher {}", clerkUserId);
 

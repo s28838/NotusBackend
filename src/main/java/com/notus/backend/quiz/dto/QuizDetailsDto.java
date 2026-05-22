@@ -1,7 +1,5 @@
 package com.notus.backend.quiz.dto;
 
-import com.notus.backend.quiz.QuizQuestion;
-
 import java.time.Instant;
 import java.util.List;
 
@@ -15,6 +13,6 @@ public record QuizDetailsDto(
         boolean countAsGrade,
         Integer gradeWeight,
         String semester,
-        List<QuizQuestion> questions,
+        List<QuizQuestionDto> questions,
         boolean hasSubmissions
 ) {}

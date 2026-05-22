@@ -2,6 +2,7 @@ package com.notus.backend.quiz;
 
 import com.notus.backend.quiz.dto.QuestionDto;
 import com.notus.backend.quiz.dto.QuizDetailsDto;
+import com.notus.backend.quiz.dto.QuizQuestionDto;
 import com.notus.backend.quiz.dto.QuizResponse;
 import com.notus.backend.teachergroups.TeacherGroup;
 import com.notus.backend.teachergroups.TeacherGroupRepository;
@@ -63,8 +64,20 @@ public class QuizService {
                 quiz.isCountAsGrade(),
                 quiz.getGradeWeight(),
                 quiz.getGradeSemester(),
-                quiz.getQuestions(),
+                quiz.getQuestions().stream()
+                        .map(this::toQuestionDto)
+                        .toList(),
                 hasSubmissions
+        );
+    }
+
+    private QuizQuestionDto toQuestionDto(QuizQuestion question) {
+        return new QuizQuestionDto(
+                question.getId(),
+                question.getType(),
+                question.getQuestionText(),
+                question.getOptions() != null ? new ArrayList<>(question.getOptions()) : List.of(),
+                question.getCorrectAnswer()
         );
     }
 
@@ -84,7 +97,7 @@ public class QuizService {
     // ── Public API ────────────────────────────────────────────────────────────
 
     @Transactional
-    public Quiz saveQuiz(String clerkUserId, QuizResponse dto) {
+    public QuizDetailsDto saveQuiz(String clerkUserId, QuizResponse dto) {
         Teacher teacher = getTeacherByClerkId(clerkUserId);
         Quiz quiz = new Quiz();
         quiz.setTeacher(teacher);
@@ -93,13 +106,15 @@ public class QuizService {
         quiz.setCreatedAt(Instant.now());
         applyGradeSettings(quiz, teacher, dto);
         applyQuestionsFromDto(quiz, dto.getQuestions());
-        return quizRepository.save(quiz);
+        return toDetailsDto(quizRepository.save(quiz), false);
     }
 
     @Transactional(readOnly = true)
-    public List<Quiz> getTeacherQuizzes(String clerkUserId) {
+    public List<QuizDetailsDto> getTeacherQuizzes(String clerkUserId) {
         Teacher teacher = getTeacherByClerkId(clerkUserId);
-        return quizRepository.findByTeacherAndArchivedFalse(teacher);
+        return quizRepository.findByTeacherAndArchivedFalse(teacher).stream()
+                .map(quiz -> toDetailsDto(quiz, false))
+                .toList();
     }
 
     @Transactional(readOnly = true)
