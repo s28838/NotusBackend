@@ -159,7 +159,10 @@ class ScheduleServiceWriteTest {
             return list.size() == 3
                     && list.get(0).getDate().equals(Instant.parse("2026-05-04T10:00:00Z"))
                     && list.get(1).getDate().equals(Instant.parse("2026-05-11T10:00:00Z"))
-                    && list.get(2).getDate().equals(Instant.parse("2026-05-18T10:00:00Z"));
+                    && list.get(2).getDate().equals(Instant.parse("2026-05-18T10:00:00Z"))
+                    && list.stream().allMatch(schedule -> schedule.getRecurrenceSeriesId() != null)
+                    && list.stream().allMatch(schedule -> Integer.valueOf(1).equals(schedule.getRepeatEveryWeeks()))
+                    && list.stream().allMatch(schedule -> schedule.getRecurrenceEndsAt().equals(Instant.parse("2026-05-18T10:00:00Z")));
         }));
         verify(scheduleRepository, never()).save(any(Schedule.class));
     }
@@ -246,6 +249,43 @@ class ScheduleServiceWriteTest {
         scheduleService.deleteSchedule("id1", "uid1");
 
         verify(scheduleRepository).deleteById("id1");
+    }
+
+    @Test
+    void deleteSchedule_deletesFutureOccurrencesForRecurringLesson() {
+        Teacher teacher = teacher(1L);
+        Schedule first = schedule("id1", teacher);
+        first.setDate(Instant.parse("2026-05-04T10:00:00Z"));
+        first.setRecurrenceSeriesId("series-1");
+        Schedule second = schedule("id2", teacher);
+        second.setDate(Instant.parse("2026-05-11T10:00:00Z"));
+        second.setRecurrenceSeriesId("series-1");
+        when(scheduleRepository.findById("id1")).thenReturn(Optional.of(first));
+        when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+        when(scheduleRepository.findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+                "series-1",
+                teacher,
+                Instant.parse("2026-05-04T10:00:00Z")
+        )).thenReturn(List.of(first, second));
+
+        scheduleService.deleteSchedule("id1", "uid1", true);
+
+        verify(scheduleRepository).deleteAll(List.of(first, second));
+        verify(scheduleRepository, never()).deleteById("id1");
+    }
+
+    @Test
+    void deleteSchedule_deletesSingleRecurringOccurrenceWhenFutureFlagIsFalse() {
+        Teacher teacher = teacher(1L);
+        Schedule first = schedule("id1", teacher);
+        first.setRecurrenceSeriesId("series-1");
+        when(scheduleRepository.findById("id1")).thenReturn(Optional.of(first));
+        when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+
+        scheduleService.deleteSchedule("id1", "uid1", false);
+
+        verify(scheduleRepository).deleteById("id1");
+        verify(scheduleRepository, never()).deleteAll(anyList());
     }
 
     @Test

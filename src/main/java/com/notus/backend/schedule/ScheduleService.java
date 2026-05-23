@@ -243,9 +243,11 @@ public class ScheduleService {
         }
 
         List<Instant> occurrenceDates = weeklyOccurrences(req);
+        String recurrenceSeriesId = UUID.randomUUID().toString();
+        int everyWeeks = req.repeatEveryWeeks() != null ? req.repeatEveryWeeks() : 1;
         List<Schedule> schedules = new ArrayList<>();
         for (Instant date : occurrenceDates) {
-            schedules.add(buildSchedule(req, teacher, group, teacherGroup, date));
+            schedules.add(buildSchedule(req, teacher, group, teacherGroup, date, recurrenceSeriesId, everyWeeks, req.repeatUntil()));
         }
 
         return scheduleRepository.saveAll(schedules).iterator().next();
@@ -256,6 +258,17 @@ public class ScheduleService {
                                    StudentGroup group,
                                    TeacherGroup teacherGroup,
                                    Instant date) {
+        return buildSchedule(req, teacher, group, teacherGroup, date, null, null, null);
+    }
+
+    private Schedule buildSchedule(CreateScheduleRequest req,
+                                   Teacher teacher,
+                                   StudentGroup group,
+                                   TeacherGroup teacherGroup,
+                                   Instant date,
+                                   String recurrenceSeriesId,
+                                   Integer repeatEveryWeeks,
+                                   Instant recurrenceEndsAt) {
         return Schedule.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(req.subject())
@@ -267,6 +280,9 @@ public class ScheduleService {
                 .teacherEntity(teacher)
                 .studentGroup(group)
                 .teacherGroup(teacherGroup)
+                .recurrenceSeriesId(recurrenceSeriesId)
+                .repeatEveryWeeks(repeatEveryWeeks)
+                .recurrenceEndsAt(recurrenceEndsAt)
                 .build();
     }
 
@@ -341,12 +357,29 @@ public class ScheduleService {
 
     @Transactional
     public void deleteSchedule(String id, String teacherUid) {
+        deleteSchedule(id, teacherUid, false);
+    }
+
+    @Transactional
+    public void deleteSchedule(String id, String teacherUid, boolean deleteFutureOccurrences) {
         Schedule schedule = scheduleRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Schedule not found"));
         Teacher teacher = teacherRepository.findByClerkUserId(teacherUid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher not found"));
         if (schedule.getTeacherEntity() == null || !schedule.getTeacherEntity().getId().equals(teacher.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Nie możesz usunąć cudzych zajęć");
+        }
+        if (deleteFutureOccurrences && schedule.getRecurrenceSeriesId() != null && !schedule.getRecurrenceSeriesId().isBlank()) {
+            List<Schedule> futureOccurrences = scheduleRepository
+                    .findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+                            schedule.getRecurrenceSeriesId(),
+                            teacher,
+                            schedule.getDate()
+                    );
+            if (!futureOccurrences.isEmpty()) {
+                scheduleRepository.deleteAll(futureOccurrences);
+                return;
+            }
         }
         scheduleRepository.deleteById(id);
     }

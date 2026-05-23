@@ -14,7 +14,11 @@ public record ScheduleResponse(
         String color,
         Long studentGroupId,
         String studentGroupName,
-        Long teacherGroupId
+        Long teacherGroupId,
+        boolean recurring,
+        String recurrenceSeriesId,
+        Integer repeatEveryWeeks,
+        Instant recurrenceEndsAt
 ) {
     public static ScheduleResponse from(Schedule schedule) {
         if (schedule == null) {
@@ -32,7 +36,11 @@ public record ScheduleResponse(
                 schedule.getColor(),
                 schedule.getStudentGroup() != null ? schedule.getStudentGroup().getId() : null,
                 schedule.getStudentGroupName(),
-                schedule.getTeacherGroupId()
+                schedule.getTeacherGroupId(),
+                schedule.getRecurrenceSeriesId() != null && !schedule.getRecurrenceSeriesId().isBlank(),
+                schedule.getRecurrenceSeriesId(),
+                schedule.getRepeatEveryWeeks(),
+                schedule.getRecurrenceEndsAt()
         );
     }
 }

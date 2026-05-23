@@ -187,7 +187,8 @@ public class ScheduleController {
     public void delete(
             Authentication auth,
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(defaultValue = "false") boolean deleteFuture
     ) {
         String uid = (String) auth.getPrincipal();
         String email = (String) request.getAttribute("clerk_email");
@@ -196,7 +197,7 @@ public class ScheduleController {
         if (user.role() != Role.TEACHER) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only teachers can delete schedule entries");
         }
-        scheduleService.deleteSchedule(id, uid);
+        scheduleService.deleteSchedule(id, uid, deleteFuture);
     }
 
     private List<ScheduleResponse> toResponse(List<Schedule> schedules) {

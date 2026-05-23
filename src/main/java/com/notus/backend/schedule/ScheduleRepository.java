@@ -51,6 +51,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, String> {
             List<Long> groupIds
     );
 
+    List<Schedule> findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+            String recurrenceSeriesId,
+            com.notus.backend.users.Teacher teacherEntity,
+            Instant date
+    );
+
     long countByStudentGroup(com.notus.backend.attendance.group.StudentGroup group);
     long countByTeacherGroup(com.notus.backend.teachergroups.TeacherGroup group);
 }

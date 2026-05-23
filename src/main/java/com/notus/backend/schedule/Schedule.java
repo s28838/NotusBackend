@@ -41,6 +41,10 @@ public class Schedule {
     @JoinColumn(name = "teacher_group_id")
     private TeacherGroup teacherGroup;
 
+    private String recurrenceSeriesId;
+    private Integer repeatEveryWeeks;
+    private Instant recurrenceEndsAt;
+
     @Transient
     public String getStudentGroupName() {
         if (teacherGroup != null) {
