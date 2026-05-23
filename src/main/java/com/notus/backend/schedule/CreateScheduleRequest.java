@@ -10,5 +10,8 @@ public record CreateScheduleRequest(
         String type,
         Long studentGroupId,
         Long teacherGroupId,
-        String color
+        String color,
+        Boolean repeatWeekly,
+        Integer repeatEveryWeeks,
+        Instant repeatUntil
 ) {}

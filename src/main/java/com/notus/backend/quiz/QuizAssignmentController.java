@@ -20,7 +20,7 @@ public class QuizAssignmentController {
 
     /** Teacher: assign a quiz to a schedule lesson */
     @PostMapping
-    public QuizAssignment assignQuiz(Principal principal, @RequestBody AssignQuizRequest req) {
+    public AssignmentSummaryDto assignQuiz(Principal principal, @RequestBody AssignQuizRequest req) {
         return service.assignQuiz(principal.getName(), req);
     }
 

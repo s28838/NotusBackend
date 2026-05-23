@@ -68,7 +68,7 @@ public class QuizAssignmentService {
     // --- Teacher: assign quiz to a schedule lesson ---
 
     @Transactional
-    public QuizAssignment assignQuiz(String teacherClerkId, AssignQuizRequest req) {
+    public AssignmentSummaryDto assignQuiz(String teacherClerkId, AssignQuizRequest req) {
         Teacher teacher = getTeacher(teacherClerkId);
         Quiz quiz = quizRepository.findById(req.quizId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Quiz nie istnieje"));
@@ -91,7 +91,7 @@ public class QuizAssignmentService {
         assignment.setScheduleId(req.scheduleId());
         assignment.setTeacher(teacher);
         assignment.setAssignedAt(Instant.now());
-        return assignmentRepository.save(assignment);
+        return buildSummary(assignmentRepository.save(assignment), List.of());
     }
 
     // --- Teacher: list all their assignments with stats ---

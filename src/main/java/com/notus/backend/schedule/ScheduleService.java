@@ -18,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -161,27 +163,20 @@ public class ScheduleService {
             String teacherName,
             Long groupId
     ) {
-        if (teacherId != null) {
-            List<Schedule> byTeacherId = scheduleRepository.findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(start, end, teacherId);
-            if (!byTeacherId.isEmpty()) {
-                return byTeacherId;
-            }
-        }
-
-        if (teacherName != null && !teacherName.isBlank()) {
-            List<Schedule> byTeacherName =
-                    scheduleRepository.findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseOrderByTimeAsc(start, end, teacherName);
-            if (!byTeacherName.isEmpty()) {
-                return byTeacherName;
-            }
-        }
-
         if (groupId != null) {
             List<Schedule> byTeacherGroup = scheduleRepository.findByDateBetweenAndTeacherGroup_IdOrderByTimeAsc(start, end, groupId);
-            if (!byTeacherGroup.isEmpty()) {
+            if (!byTeacherGroup.isEmpty() || teacherGroupRepository.existsById(groupId)) {
                 return byTeacherGroup;
             }
             return scheduleRepository.findByDateBetweenAndStudentGroupIdOrderByTimeAsc(start, end, groupId);
+        }
+
+        if (teacherId != null) {
+            return scheduleRepository.findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(start, end, teacherId);
+        }
+
+        if (teacherName != null && !teacherName.isBlank()) {
+            return scheduleRepository.findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseOrderByTimeAsc(start, end, teacherName);
         }
 
         return scheduleRepository.findByDateBetweenOrderByTimeAsc(start, end);
@@ -243,10 +238,28 @@ public class ScheduleService {
         TeacherGroup teacherGroup = teacherGroupRepository.findByIdAndTeacherAndActiveTrue(teacherGroupId, teacher)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teacher group not found"));
 
-        Schedule schedule = Schedule.builder()
+        if (!Boolean.TRUE.equals(req.repeatWeekly())) {
+            return scheduleRepository.save(buildSchedule(req, teacher, group, teacherGroup, req.date()));
+        }
+
+        List<Instant> occurrenceDates = weeklyOccurrences(req);
+        List<Schedule> schedules = new ArrayList<>();
+        for (Instant date : occurrenceDates) {
+            schedules.add(buildSchedule(req, teacher, group, teacherGroup, date));
+        }
+
+        return scheduleRepository.saveAll(schedules).iterator().next();
+    }
+
+    private Schedule buildSchedule(CreateScheduleRequest req,
+                                   Teacher teacher,
+                                   StudentGroup group,
+                                   TeacherGroup teacherGroup,
+                                   Instant date) {
+        return Schedule.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(req.subject())
-                .date(req.date())
+                .date(date)
                 .time(req.time())
                 .room(req.room())
                 .type(req.type())
@@ -255,8 +268,38 @@ public class ScheduleService {
                 .studentGroup(group)
                 .teacherGroup(teacherGroup)
                 .build();
+    }
 
-        return scheduleRepository.save(schedule);
+    private List<Instant> weeklyOccurrences(CreateScheduleRequest req) {
+        if (req.date() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Data pierwszych zajęć jest wymagana");
+        }
+        if (req.repeatUntil() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Data końca powtarzania jest wymagana");
+        }
+
+        int everyWeeks = req.repeatEveryWeeks() != null ? req.repeatEveryWeeks() : 1;
+        if (everyWeeks < 1 || everyWeeks > 52) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Odstęp powtarzania musi być od 1 do 52 tygodni");
+        }
+
+        ZoneId zone = ZoneId.systemDefault();
+        ZonedDateTime first = req.date().atZone(zone);
+        LocalDate endDate = LocalDate.ofInstant(req.repeatUntil(), zone);
+        if (endDate.isBefore(first.toLocalDate())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Data końca powtarzania nie może być wcześniejsza niż pierwsze zajęcia");
+        }
+
+        List<Instant> occurrences = new ArrayList<>();
+        ZonedDateTime current = first;
+        while (!current.toLocalDate().isAfter(endDate)) {
+            occurrences.add(current.toInstant());
+            if (occurrences.size() > 104) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seria zajęć może mieć maksymalnie 104 terminy");
+            }
+            current = current.plusWeeks(everyWeeks);
+        }
+        return occurrences;
     }
 
     @Transactional

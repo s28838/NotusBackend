@@ -15,11 +15,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,6 +59,34 @@ class ScheduleServiceWriteTest {
     }
 
     @Test
+    void getSchedule_returnsEmptyForTeacherInsteadOfFallingBackToAllSchedules() {
+        Instant start = Instant.parse("2026-05-01T00:00:00Z");
+        Instant end = Instant.parse("2026-05-31T23:59:59Z");
+        when(scheduleRepository.findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(start, end, 99L))
+                .thenReturn(List.of());
+
+        List<Schedule> result = scheduleService.getSchedule(start, end, 99L, null, null);
+
+        assertThat(result).isEmpty();
+        verify(scheduleRepository, never()).findByDateBetweenOrderByTimeAsc(start, end);
+    }
+
+    @Test
+    void getSchedule_returnsEmptyForTeacherGroupInsteadOfFallingBackToLegacyGroup() {
+        Instant start = Instant.parse("2026-05-01T00:00:00Z");
+        Instant end = Instant.parse("2026-05-31T23:59:59Z");
+        when(scheduleRepository.findByDateBetweenAndTeacherGroup_IdOrderByTimeAsc(start, end, 10L))
+                .thenReturn(List.of());
+        when(teacherGroupRepository.existsById(10L)).thenReturn(true);
+
+        List<Schedule> result = scheduleService.getSchedule(start, end, null, null, 10L);
+
+        assertThat(result).isEmpty();
+        verify(scheduleRepository, never()).findByDateBetweenAndStudentGroupIdOrderByTimeAsc(start, end, 10L);
+        verify(scheduleRepository, never()).findByDateBetweenOrderByTimeAsc(start, end);
+    }
+
+    @Test
     void createSchedule_savesAndReturnsSchedule() {
         Teacher teacher = teacher(1L);
         TeacherGroup group = teacherGroup(10L, teacher);
@@ -78,7 +109,8 @@ class ScheduleServiceWriteTest {
         when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
 
         CreateScheduleRequest req = new CreateScheduleRequest(
-                "Matematyka", Instant.now(), "08:00 - 09:30", "101", "Wyklad", null, null, null
+                "Matematyka", Instant.now(), "08:00 - 09:30", "101", "Wyklad", null, null, null,
+                false, 1, null
         );
 
         assertThatThrownBy(() -> scheduleService.createSchedule(req, "uid1"))
@@ -95,6 +127,70 @@ class ScheduleServiceWriteTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
                         .isEqualTo(HttpStatus.FORBIDDEN));
+    }
+
+    @Test
+    void createSchedule_createsWeeklySeriesUntilEndDate() {
+        Teacher teacher = teacher(1L);
+        TeacherGroup group = teacherGroup(10L, teacher);
+        when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+        when(teacherGroupRepository.findByIdAndTeacherAndActiveTrue(10L, teacher)).thenReturn(Optional.of(group));
+        when(scheduleRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateScheduleRequest req = new CreateScheduleRequest(
+                "Matematyka",
+                Instant.parse("2026-05-04T10:00:00Z"),
+                "08:00 - 09:30",
+                "101",
+                "Wyklad",
+                null,
+                10L,
+                null,
+                true,
+                1,
+                Instant.parse("2026-05-18T10:00:00Z")
+        );
+
+        Schedule result = scheduleService.createSchedule(req, "uid1");
+
+        assertThat(result.getDate()).isEqualTo(Instant.parse("2026-05-04T10:00:00Z"));
+        verify(scheduleRepository).saveAll(org.mockito.ArgumentMatchers.argThat(schedules -> {
+            List<Schedule> list = (List<Schedule>) schedules;
+            return list.size() == 3
+                    && list.get(0).getDate().equals(Instant.parse("2026-05-04T10:00:00Z"))
+                    && list.get(1).getDate().equals(Instant.parse("2026-05-11T10:00:00Z"))
+                    && list.get(2).getDate().equals(Instant.parse("2026-05-18T10:00:00Z"));
+        }));
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+    }
+
+    @Test
+    void createSchedule_throws400_whenWeeklyEndDateIsBeforeStart() {
+        Teacher teacher = teacher(1L);
+        TeacherGroup group = teacherGroup(10L, teacher);
+        when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+        when(teacherGroupRepository.findByIdAndTeacherAndActiveTrue(10L, teacher)).thenReturn(Optional.of(group));
+
+        CreateScheduleRequest req = new CreateScheduleRequest(
+                "Matematyka",
+                Instant.parse("2026-05-04T10:00:00Z"),
+                "08:00 - 09:30",
+                "101",
+                "Wyklad",
+                null,
+                10L,
+                null,
+                true,
+                1,
+                Instant.parse("2026-05-03T10:00:00Z")
+        );
+
+        assertThatThrownBy(() -> scheduleService.createSchedule(req, "uid1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
+                        .isEqualTo(HttpStatus.BAD_REQUEST));
+        verify(scheduleRepository, never()).save(any(Schedule.class));
+        verify(scheduleRepository, never()).saveAll(anyList());
     }
 
     @Test
@@ -164,7 +260,8 @@ class ScheduleServiceWriteTest {
 
     private CreateScheduleRequest request(Long teacherGroupId) {
         return new CreateScheduleRequest(
-                "Matematyka", Instant.now(), "08:00 - 09:30", "101", "Wyklad", null, teacherGroupId, null
+                "Matematyka", Instant.now(), "08:00 - 09:30", "101", "Wyklad", null, teacherGroupId, null,
+                false, 1, null
         );
     }
 
