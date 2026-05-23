@@ -2,6 +2,8 @@ package com.notus.backend.schedule;
 
 import com.notus.backend.attendance.group.StudentGroup;
 import com.notus.backend.attendance.group.StudentGroupRepository;
+import com.notus.backend.realtime.TeacherRealtimeService;
+import com.notus.backend.realtime.dto.TeacherRealtimeEvent;
 import com.notus.backend.teachergroups.GroupMembershipRepository;
 import com.notus.backend.teachergroups.GroupMembershipStatus;
 import com.notus.backend.teachergroups.TeacherGroup;
@@ -20,7 +22,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -32,6 +36,7 @@ public class ScheduleService {
     private final StudentGroupRepository studentGroupRepository;
     private final TeacherGroupRepository teacherGroupRepository;
     private final GroupMembershipRepository groupMembershipRepository;
+    private final TeacherRealtimeService teacherRealtimeService;
 
     public List<Schedule> getTodaySchedule(Long teacherId, String teacherName, Long groupId) {
         LocalDate today = LocalDate.now();
@@ -239,7 +244,9 @@ public class ScheduleService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teacher group not found"));
 
         if (!Boolean.TRUE.equals(req.repeatWeekly())) {
-            return scheduleRepository.save(buildSchedule(req, teacher, group, teacherGroup, req.date()));
+            Schedule saved = scheduleRepository.save(buildSchedule(req, teacher, group, teacherGroup, req.date()));
+            publishScheduleEvent(teacher, saved, "schedule.created", Map.of("recurring", false));
+            return saved;
         }
 
         List<Instant> occurrenceDates = weeklyOccurrences(req);
@@ -250,7 +257,13 @@ public class ScheduleService {
             schedules.add(buildSchedule(req, teacher, group, teacherGroup, date, recurrenceSeriesId, everyWeeks, req.repeatUntil()));
         }
 
-        return scheduleRepository.saveAll(schedules).iterator().next();
+        Schedule firstSaved = scheduleRepository.saveAll(schedules).iterator().next();
+        publishScheduleEvent(teacher, firstSaved, "schedule.created", Map.of(
+                "recurring", true,
+                "occurrencesCount", schedules.size(),
+                "recurrenceSeriesId", recurrenceSeriesId
+        ));
+        return firstSaved;
     }
 
     private Schedule buildSchedule(CreateScheduleRequest req,
@@ -352,7 +365,9 @@ public class ScheduleService {
         // teacherEntity is intentionally immutable after creation — not updated here
         // TODO: enforce ownership — only the creating teacher should be allowed to modify
 
-        return scheduleRepository.save(schedule);
+        Schedule saved = scheduleRepository.save(schedule);
+        publishScheduleEvent(teacher, saved, "schedule.updated", Map.of("recurring", isRecurring(saved)));
+        return saved;
     }
 
     @Transactional
@@ -378,9 +393,51 @@ public class ScheduleService {
                     );
             if (!futureOccurrences.isEmpty()) {
                 scheduleRepository.deleteAll(futureOccurrences);
+                publishScheduleEvent(teacher, schedule, "schedule.deleted", Map.of(
+                        "recurring", true,
+                        "deleteFuture", true,
+                        "deletedCount", futureOccurrences.size(),
+                        "recurrenceSeriesId", schedule.getRecurrenceSeriesId()
+                ));
                 return;
             }
         }
         scheduleRepository.deleteById(id);
+        publishScheduleEvent(teacher, schedule, "schedule.deleted", Map.of(
+                "recurring", isRecurring(schedule),
+                "deleteFuture", false
+        ));
+    }
+
+    private boolean isRecurring(Schedule schedule) {
+        return schedule != null
+                && schedule.getRecurrenceSeriesId() != null
+                && !schedule.getRecurrenceSeriesId().isBlank();
+    }
+
+    private void publishScheduleEvent(
+            Teacher teacher,
+            Schedule schedule,
+            String eventName,
+            Map<String, Object> extraPayload
+    ) {
+        if (teacher == null || teacher.getClerkUserId() == null || teacher.getClerkUserId().isBlank()) {
+            return;
+        }
+        Map<String, Object> payload = new HashMap<>();
+        if (schedule != null) {
+            payload.put("scheduleId", schedule.getId());
+            payload.put("date", schedule.getDate() != null ? schedule.getDate().toString() : null);
+            payload.put("subject", schedule.getSubject());
+            payload.put("teacherGroupId", schedule.getTeacherGroupId());
+            payload.put("studentGroupId", schedule.getStudentGroup() != null ? schedule.getStudentGroup().getId() : null);
+            payload.put("recurrenceSeriesId", schedule.getRecurrenceSeriesId());
+        }
+        payload.putAll(extraPayload);
+        teacherRealtimeService.publishToTeacher(
+                teacher.getClerkUserId(),
+                eventName,
+                TeacherRealtimeEvent.of(eventName, payload)
+        );
     }
 }

@@ -1,6 +1,7 @@
 package com.notus.backend.schedule;
 
 import com.notus.backend.attendance.group.StudentGroupRepository;
+import com.notus.backend.realtime.TeacherRealtimeService;
 import com.notus.backend.teachergroups.GroupMembershipRepository;
 import com.notus.backend.teachergroups.TeacherGroup;
 import com.notus.backend.teachergroups.TeacherGroupRepository;
@@ -34,6 +35,7 @@ class ScheduleServiceWriteTest {
     @Mock private StudentGroupRepository studentGroupRepository;
     @Mock private TeacherGroupRepository teacherGroupRepository;
     @Mock private GroupMembershipRepository groupMembershipRepository;
+    @Mock private TeacherRealtimeService teacherRealtimeService;
 
     @InjectMocks private ScheduleService scheduleService;
 
