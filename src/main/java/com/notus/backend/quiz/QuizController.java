@@ -37,8 +37,14 @@ public class QuizController {
     }
 
     @PostMapping(value = "/from-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public QuizResponse generateQuizFromPdf(@RequestParam("file") MultipartFile file) {
-        return pdfQuizService.generateQuizFromPdf(file);
+    public QuizResponse generateQuizFromPdf(Principal principal,
+                                            @RequestParam("file") MultipartFile file,
+                                            @RequestParam("apiKeyId") Long apiKeyId,
+                                            @RequestParam("model") String model,
+                                            @RequestParam(name = "title", required = false) String title,
+                                            @RequestParam(name = "description", required = false) String description,
+                                            @RequestParam(name = "questionCount", defaultValue = "5") Integer questionCount) {
+        return pdfQuizService.generateQuizFromPdf(principal.getName(), file, apiKeyId, model, title, description, questionCount);
     }
 
     @PostMapping("/save")

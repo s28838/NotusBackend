@@ -1,5 +1,6 @@
 package com.notus.backend.quiz;
 
+import com.notus.backend.attendance.AttendanceRecordRepository;
 import com.notus.backend.grades.GradeService;
 import com.notus.backend.grades.QuizGradeCalculator;
 import com.notus.backend.quiz.dto.AssignmentSummaryDto;
@@ -9,8 +10,11 @@ import com.notus.backend.schedule.ScheduleRepository;
 import com.notus.backend.teachergroups.GroupMembershipRepository;
 import com.notus.backend.teachergroups.TeacherGroupRepository;
 import com.notus.backend.users.StudentRepository;
+import com.notus.backend.users.Student;
 import com.notus.backend.users.Teacher;
 import com.notus.backend.users.TeacherRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -21,6 +25,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +43,7 @@ class QuizAssignmentServiceTest {
     @Mock private GroupMembershipRepository groupMembershipRepository;
     @Mock private GradeService gradeService;
     @Mock private QuizGradeCalculator quizGradeCalculator;
+    @Mock private AttendanceRecordRepository attendanceRecordRepository;
 
     @InjectMocks private QuizAssignmentService service;
 
@@ -76,5 +82,25 @@ class QuizAssignmentServiceTest {
         assertThat(result.scheduleId()).isEqualTo("lesson-1");
         assertThat(result.scheduleSubject()).isEqualTo("Matematyka");
         assertThat(result.submissionCount()).isZero();
+    }
+
+    @Test
+    void getStudentAssignment_requiresAttendanceRecordForActiveSession() {
+        Student student = new Student();
+        student.setId(9L);
+        student.setClerkUserId("student_uid");
+
+        QuizAssignment assignment = new QuizAssignment();
+        assignment.setId(30L);
+        assignment.setActive(true);
+        assignment.setSessionId(44L);
+
+        when(studentRepository.findByClerkUserId("student_uid")).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(30L)).thenReturn(Optional.of(assignment));
+
+        assertThatThrownBy(() -> service.getStudentAssignment("student_uid", 30L))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 }

@@ -1,5 +1,6 @@
 package com.notus.backend.quiz;
 
+import com.notus.backend.attendance.AttendanceRecordRepository;
 import com.notus.backend.grades.GradeService;
 import com.notus.backend.grades.QuizGradeCalculator;
 import com.notus.backend.grades.dto.GradeResponse;
@@ -39,6 +40,7 @@ public class QuizAssignmentService {
     private final GroupMembershipRepository groupMembershipRepository;
     private final GradeService gradeService;
     private final QuizGradeCalculator quizGradeCalculator;
+    private final AttendanceRecordRepository attendanceRecordRepository;
 
     public QuizAssignmentService(
             QuizAssignmentRepository assignmentRepository,
@@ -51,7 +53,8 @@ public class QuizAssignmentService {
             TeacherGroupRepository teacherGroupRepository,
             GroupMembershipRepository groupMembershipRepository,
             GradeService gradeService,
-            QuizGradeCalculator quizGradeCalculator) {
+            QuizGradeCalculator quizGradeCalculator,
+            AttendanceRecordRepository attendanceRecordRepository) {
         this.assignmentRepository = assignmentRepository;
         this.submissionRepository = submissionRepository;
         this.answerRepository = answerRepository;
@@ -63,6 +66,7 @@ public class QuizAssignmentService {
         this.groupMembershipRepository = groupMembershipRepository;
         this.gradeService = gradeService;
         this.quizGradeCalculator = quizGradeCalculator;
+        this.attendanceRecordRepository = attendanceRecordRepository;
     }
 
     // --- Teacher: assign quiz to a schedule lesson ---
@@ -152,6 +156,7 @@ public class QuizAssignmentService {
     public StudentAssignmentDto getStudentAssignment(String studentClerkId, Long assignmentId) {
         Student student = getStudent(studentClerkId);
         QuizAssignment assignment = getAssignment(assignmentId);
+        assertStudentCanTakeAssignment(student, assignment);
         Schedule schedule = scheduleRepository.findById(assignment.getScheduleId()).orElse(null);
 
         List<StudentQuestionDto> questions = assignment.getQuiz().getQuestions().stream()
@@ -181,6 +186,7 @@ public class QuizAssignmentService {
     public SubmitResultDto submitAnswers(String studentClerkId, Long assignmentId, SubmitAnswersRequest req) {
         Student student = getStudent(studentClerkId);
         QuizAssignment assignment = getAssignment(assignmentId);
+        assertStudentCanTakeAssignment(student, assignment);
 
         List<QuizQuestion> questions = assignment.getQuiz().getQuestions();
         Map<Long, String> answers = req.answers() != null ? req.answers() : Map.of();
@@ -401,6 +407,7 @@ public class QuizAssignmentService {
     @Transactional(readOnly = true)
     public StudentAssignmentDto getActiveForSession(String studentClerkId, Long sessionId) {
         Student student = getStudent(studentClerkId);
+        assertStudentHasAttendanceForSession(student, sessionId);
         QuizAssignment assignment = assignmentRepository.findBySessionIdAndActiveTrue(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Brak aktywnego quizu"));
         Schedule schedule = scheduleRepository.findById(assignment.getScheduleId()).orElse(null);
@@ -434,6 +441,19 @@ public class QuizAssignmentService {
     private QuizSubmission getSubmission(Long id) {
         return submissionRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zgłoszenie nie istnieje"));
+    }
+
+    private void assertStudentCanTakeAssignment(Student student, QuizAssignment assignment) {
+        if (!assignment.isActive() || assignment.getSessionId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quiz jest dostepny tylko podczas aktywnej sesji");
+        }
+        assertStudentHasAttendanceForSession(student, assignment.getSessionId());
+    }
+
+    private void assertStudentHasAttendanceForSession(Student student, Long sessionId) {
+        if (sessionId == null || attendanceRecordRepository.findBySessionIdAndStudent(sessionId, student).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quiz jest dostepny tylko po potwierdzeniu obecnosci");
+        }
     }
 
     private Teacher getTeacher(String clerkId) {

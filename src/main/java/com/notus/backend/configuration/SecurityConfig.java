@@ -57,7 +57,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/attendance/sessions/*/qr").hasRole("TEACHER")
                         .requestMatchers(HttpMethod.GET, "/api/attendance/sessions/*/records").hasRole("TEACHER")
                         .requestMatchers(HttpMethod.POST, "/api/attendance/sessions/*/close").hasRole("TEACHER")
-                        .requestMatchers("/api/teacher/groups/**", "/api/teacher/analytics/**", "/api/teacher/realtime/**", "/api/teacher/notifications", "/api/teacher/activity").hasRole("TEACHER")
+                        .requestMatchers("/api/teacher/groups/**", "/api/teacher/analytics/**", "/api/teacher/realtime/**", "/api/teacher/notifications", "/api/teacher/activity", "/api/teacher/ai-keys/**").hasRole("TEACHER")
                         .requestMatchers("/api/quiz/**").hasRole("TEACHER")
                         .requestMatchers(HttpMethod.POST, "/api/quiz-assignments").hasRole("TEACHER")
                         .requestMatchers(HttpMethod.GET, "/api/quiz-assignments/my").hasRole("TEACHER")
