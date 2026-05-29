@@ -50,7 +50,7 @@ public class ScheduleService {
         Instant start = date.atStartOfDay(ZoneId.systemDefault()).toInstant();
         Instant end = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
 
-        return scheduleRepository.findByDateBetweenOrderByTimeAsc(start, end);
+        return scheduleRepository.findByDateBetweenAndDeletedFalseOrderByTimeAsc(start, end);
     }
 
     public List<Schedule> getSchedule(Instant start, Instant end, Long teacherId, String teacherName, Long groupId) {
@@ -119,7 +119,7 @@ public class ScheduleService {
                 .distinct()
                 .toList();
         if (!teacherGroupIds.isEmpty()) {
-            return scheduleRepository.findByDateBetweenAndTeacherGroup_IdInOrderByTimeAsc(start, end, teacherGroupIds);
+            return scheduleRepository.findByDateBetweenAndTeacherGroup_IdInAndDeletedFalseOrderByTimeAsc(start, end, teacherGroupIds);
         }
 
         if (student.getStudentGroups() == null || student.getStudentGroups().isEmpty()) {
@@ -130,7 +130,7 @@ public class ScheduleService {
                 .map(group -> group.getId())
                 .distinct()
                 .toList();
-        return scheduleRepository.findByDateBetweenAndStudentGroupIdInOrderByTimeAsc(start, end, groupIds);
+        return scheduleRepository.findByDateBetweenAndStudentGroupIdInAndDeletedFalseOrderByTimeAsc(start, end, groupIds);
     }
 
     public List<Schedule> getScheduleForStudent(Student student) {
@@ -145,7 +145,7 @@ public class ScheduleService {
                 .distinct()
                 .toList();
         if (!teacherGroupIds.isEmpty()) {
-            return scheduleRepository.findByTeacherGroup_IdInOrderByDateAscTimeAsc(teacherGroupIds);
+            return scheduleRepository.findByTeacherGroup_IdInAndDeletedFalseOrderByDateAscTimeAsc(teacherGroupIds);
         }
 
         if (student.getStudentGroups() == null || student.getStudentGroups().isEmpty()) {
@@ -158,7 +158,7 @@ public class ScheduleService {
                 .distinct()
                 .toList();
 
-        return scheduleRepository.findByStudentGroupIdInOrderByDateAscTimeAsc(groupIds);
+        return scheduleRepository.findByStudentGroupIdInAndDeletedFalseOrderByDateAscTimeAsc(groupIds);
     }
 
     private List<Schedule> getFilteredSchedule(
@@ -169,22 +169,22 @@ public class ScheduleService {
             Long groupId
     ) {
         if (groupId != null) {
-            List<Schedule> byTeacherGroup = scheduleRepository.findByDateBetweenAndTeacherGroup_IdOrderByTimeAsc(start, end, groupId);
+            List<Schedule> byTeacherGroup = scheduleRepository.findByDateBetweenAndTeacherGroup_IdAndDeletedFalseOrderByTimeAsc(start, end, groupId);
             if (!byTeacherGroup.isEmpty() || teacherGroupRepository.existsById(groupId)) {
                 return byTeacherGroup;
             }
-            return scheduleRepository.findByDateBetweenAndStudentGroupIdOrderByTimeAsc(start, end, groupId);
+            return scheduleRepository.findByDateBetweenAndStudentGroupIdAndDeletedFalseOrderByTimeAsc(start, end, groupId);
         }
 
         if (teacherId != null) {
-            return scheduleRepository.findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(start, end, teacherId);
+            return scheduleRepository.findByDateBetweenAndTeacherEntityIdAndDeletedFalseOrderByTimeAsc(start, end, teacherId);
         }
 
         if (teacherName != null && !teacherName.isBlank()) {
-            return scheduleRepository.findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseOrderByTimeAsc(start, end, teacherName);
+            return scheduleRepository.findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseAndDeletedFalseOrderByTimeAsc(start, end, teacherName);
         }
 
-        return scheduleRepository.findByDateBetweenOrderByTimeAsc(start, end);
+        return scheduleRepository.findByDateBetweenAndDeletedFalseOrderByTimeAsc(start, end);
     }
 
     public List<Schedule> getTodayScheduleForStudent(Student student) {
@@ -203,7 +203,7 @@ public class ScheduleService {
                 .distinct()
                 .toList();
         if (!teacherGroupIds.isEmpty()) {
-            return scheduleRepository.findByDateBetweenAndTeacherGroup_IdInOrderByTimeAsc(start, end, teacherGroupIds);
+            return scheduleRepository.findByDateBetweenAndTeacherGroup_IdInAndDeletedFalseOrderByTimeAsc(start, end, teacherGroupIds);
         }
 
         if (student.getStudentGroups() == null || student.getStudentGroups().isEmpty()) {
@@ -216,13 +216,14 @@ public class ScheduleService {
                 .distinct()
                 .toList();
 
-        return scheduleRepository.findByDateBetweenAndStudentGroupIdInOrderByTimeAsc(start, end, groupIds);
+        return scheduleRepository.findByDateBetweenAndStudentGroupIdInAndDeletedFalseOrderByTimeAsc(start, end, groupIds);
     }
 
 
     @Transactional(readOnly = true)
     public Schedule getById(String id) {
         return scheduleRepository.findById(id)
+                .filter(schedule -> !schedule.isDeleted())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Schedule not found"));
     }
 
@@ -334,6 +335,7 @@ public class ScheduleService {
     @Transactional
     public Schedule updateSchedule(String id, CreateScheduleRequest req, String teacherUid) {
         Schedule schedule = scheduleRepository.findById(id)
+                .filter(existing -> !existing.isDeleted())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Schedule not found"));
         Teacher teacher = teacherRepository.findByClerkUserId(teacherUid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher not found"));
@@ -384,15 +386,20 @@ public class ScheduleService {
         if (schedule.getTeacherEntity() == null || !schedule.getTeacherEntity().getId().equals(teacher.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Nie możesz usunąć cudzych zajęć");
         }
+        if (schedule.isDeleted()) {
+            return;
+        }
         if (deleteFutureOccurrences && schedule.getRecurrenceSeriesId() != null && !schedule.getRecurrenceSeriesId().isBlank()) {
             List<Schedule> futureOccurrences = scheduleRepository
-                    .findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+                    .findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualAndDeletedFalseOrderByDateAscTimeAsc(
                             schedule.getRecurrenceSeriesId(),
                             teacher,
                             schedule.getDate()
                     );
             if (!futureOccurrences.isEmpty()) {
-                scheduleRepository.deleteAll(futureOccurrences);
+                Instant deletedAt = Instant.now();
+                futureOccurrences.forEach(occurrence -> markDeleted(occurrence, deletedAt));
+                scheduleRepository.saveAll(futureOccurrences);
                 publishScheduleEvent(teacher, schedule, "schedule.deleted", Map.of(
                         "recurring", true,
                         "deleteFuture", true,
@@ -402,11 +409,17 @@ public class ScheduleService {
                 return;
             }
         }
-        scheduleRepository.deleteById(id);
+        markDeleted(schedule, Instant.now());
+        scheduleRepository.save(schedule);
         publishScheduleEvent(teacher, schedule, "schedule.deleted", Map.of(
                 "recurring", isRecurring(schedule),
                 "deleteFuture", false
         ));
+    }
+
+    private void markDeleted(Schedule schedule, Instant deletedAt) {
+        schedule.setDeleted(true);
+        schedule.setDeletedAt(deletedAt);
     }
 
     private boolean isRecurring(Schedule schedule) {

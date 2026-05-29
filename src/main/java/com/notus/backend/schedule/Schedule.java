@@ -45,6 +45,10 @@ public class Schedule {
     private Integer repeatEveryWeeks;
     private Instant recurrenceEndsAt;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean deleted;
+    private Instant deletedAt;
+
     @Transient
     public String getStudentGroupName() {
         if (teacherGroup != null) {

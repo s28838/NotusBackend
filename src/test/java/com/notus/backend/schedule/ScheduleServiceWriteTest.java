@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,28 +65,28 @@ class ScheduleServiceWriteTest {
     void getSchedule_returnsEmptyForTeacherInsteadOfFallingBackToAllSchedules() {
         Instant start = Instant.parse("2026-05-01T00:00:00Z");
         Instant end = Instant.parse("2026-05-31T23:59:59Z");
-        when(scheduleRepository.findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(start, end, 99L))
+        when(scheduleRepository.findByDateBetweenAndTeacherEntityIdAndDeletedFalseOrderByTimeAsc(start, end, 99L))
                 .thenReturn(List.of());
 
         List<Schedule> result = scheduleService.getSchedule(start, end, 99L, null, null);
 
         assertThat(result).isEmpty();
-        verify(scheduleRepository, never()).findByDateBetweenOrderByTimeAsc(start, end);
+        verify(scheduleRepository, never()).findByDateBetweenAndDeletedFalseOrderByTimeAsc(start, end);
     }
 
     @Test
     void getSchedule_returnsEmptyForTeacherGroupInsteadOfFallingBackToLegacyGroup() {
         Instant start = Instant.parse("2026-05-01T00:00:00Z");
         Instant end = Instant.parse("2026-05-31T23:59:59Z");
-        when(scheduleRepository.findByDateBetweenAndTeacherGroup_IdOrderByTimeAsc(start, end, 10L))
+        when(scheduleRepository.findByDateBetweenAndTeacherGroup_IdAndDeletedFalseOrderByTimeAsc(start, end, 10L))
                 .thenReturn(List.of());
         when(teacherGroupRepository.existsById(10L)).thenReturn(true);
 
         List<Schedule> result = scheduleService.getSchedule(start, end, null, null, 10L);
 
         assertThat(result).isEmpty();
-        verify(scheduleRepository, never()).findByDateBetweenAndStudentGroupIdOrderByTimeAsc(start, end, 10L);
-        verify(scheduleRepository, never()).findByDateBetweenOrderByTimeAsc(start, end);
+        verify(scheduleRepository, never()).findByDateBetweenAndStudentGroupIdAndDeletedFalseOrderByTimeAsc(start, end, 10L);
+        verify(scheduleRepository, never()).findByDateBetweenAndDeletedFalseOrderByTimeAsc(start, end);
     }
 
     @Test
@@ -243,18 +244,23 @@ class ScheduleServiceWriteTest {
     }
 
     @Test
-    void deleteSchedule_deletesWhenFound() {
+    void deleteSchedule_softDeletesWhenFound() {
         Teacher teacher = teacher(1L);
-        when(scheduleRepository.findById("id1")).thenReturn(Optional.of(schedule("id1", teacher)));
+        Schedule existing = schedule("id1", teacher);
+        when(scheduleRepository.findById("id1")).thenReturn(Optional.of(existing));
         when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+        when(scheduleRepository.save(any(Schedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         scheduleService.deleteSchedule("id1", "uid1");
 
-        verify(scheduleRepository).deleteById("id1");
+        assertThat(existing.isDeleted()).isTrue();
+        assertThat(existing.getDeletedAt()).isNotNull();
+        verify(scheduleRepository).save(existing);
+        verify(scheduleRepository, never()).deleteById(anyString());
     }
 
     @Test
-    void deleteSchedule_deletesFutureOccurrencesForRecurringLesson() {
+    void deleteSchedule_softDeletesFutureOccurrencesForRecurringLesson() {
         Teacher teacher = teacher(1L);
         Schedule first = schedule("id1", teacher);
         first.setDate(Instant.parse("2026-05-04T10:00:00Z"));
@@ -264,29 +270,39 @@ class ScheduleServiceWriteTest {
         second.setRecurrenceSeriesId("series-1");
         when(scheduleRepository.findById("id1")).thenReturn(Optional.of(first));
         when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
-        when(scheduleRepository.findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+        when(scheduleRepository.findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualAndDeletedFalseOrderByDateAscTimeAsc(
                 "series-1",
                 teacher,
                 Instant.parse("2026-05-04T10:00:00Z")
         )).thenReturn(List.of(first, second));
+        when(scheduleRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
 
         scheduleService.deleteSchedule("id1", "uid1", true);
 
-        verify(scheduleRepository).deleteAll(List.of(first, second));
-        verify(scheduleRepository, never()).deleteById("id1");
+        assertThat(first.isDeleted()).isTrue();
+        assertThat(first.getDeletedAt()).isNotNull();
+        assertThat(second.isDeleted()).isTrue();
+        assertThat(second.getDeletedAt()).isEqualTo(first.getDeletedAt());
+        verify(scheduleRepository).saveAll(List.of(first, second));
+        verify(scheduleRepository, never()).deleteAll(anyList());
+        verify(scheduleRepository, never()).deleteById(anyString());
     }
 
     @Test
-    void deleteSchedule_deletesSingleRecurringOccurrenceWhenFutureFlagIsFalse() {
+    void deleteSchedule_softDeletesSingleRecurringOccurrenceWhenFutureFlagIsFalse() {
         Teacher teacher = teacher(1L);
         Schedule first = schedule("id1", teacher);
         first.setRecurrenceSeriesId("series-1");
         when(scheduleRepository.findById("id1")).thenReturn(Optional.of(first));
         when(teacherRepository.findByClerkUserId("uid1")).thenReturn(Optional.of(teacher));
+        when(scheduleRepository.save(any(Schedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         scheduleService.deleteSchedule("id1", "uid1", false);
 
-        verify(scheduleRepository).deleteById("id1");
+        assertThat(first.isDeleted()).isTrue();
+        assertThat(first.getDeletedAt()).isNotNull();
+        verify(scheduleRepository).save(first);
+        verify(scheduleRepository, never()).deleteById(anyString());
         verify(scheduleRepository, never()).deleteAll(anyList());
     }
 

@@ -128,8 +128,8 @@ public class TeacherGroupDevDataSeeder implements CommandLineRunner {
     }
 
     private void seedWeekSchedule(TeacherGroup mathGroup, TeacherGroup physicsGroup) {
-        if (scheduleRepository.countByTeacherGroup(mathGroup) > 0
-                || scheduleRepository.countByTeacherGroup(physicsGroup) > 0) {
+        if (scheduleRepository.countByTeacherGroupAndDeletedFalse(mathGroup) > 0
+                || scheduleRepository.countByTeacherGroupAndDeletedFalse(physicsGroup) > 0) {
             return;
         }
 

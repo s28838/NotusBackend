@@ -42,7 +42,7 @@ public class ScheduleDataSeeder implements CommandLineRunner {
             return studentGroupRepository.save(g);
         });
 
-        long groupScheduleCount = scheduleRepository.countByStudentGroup(group);
+        long groupScheduleCount = scheduleRepository.countByStudentGroupAndDeletedFalse(group);
         log.info("Schedule count for group {}: {}", group.getCode(), groupScheduleCount);
 
         if (groupScheduleCount == 0) {

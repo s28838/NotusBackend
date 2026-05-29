@@ -9,54 +9,54 @@ import java.util.List;
 @Repository
 public interface ScheduleRepository extends JpaRepository<Schedule, String> {
 
-    List<Schedule> findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndTeacherEntityNameContainingIgnoreCaseAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             String teacherName
     );
 
-    List<Schedule> findByDateBetweenAndTeacherEntityIdOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndTeacherEntityIdAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             Long teacherId
     );
 
-    List<Schedule> findByDateBetweenAndStudentGroupIdOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndStudentGroupIdAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             Long groupId
     );
 
-    List<Schedule> findByDateBetweenAndTeacherGroup_IdOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndTeacherGroup_IdAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             Long groupId
     );
 
-    List<Schedule> findByStudentGroupIdInOrderByDateAscTimeAsc(List<Long> groupIds);
+    List<Schedule> findByStudentGroupIdInAndDeletedFalseOrderByDateAscTimeAsc(List<Long> groupIds);
 
-    List<Schedule> findByTeacherGroup_IdInOrderByDateAscTimeAsc(List<Long> groupIds);
+    List<Schedule> findByTeacherGroup_IdInAndDeletedFalseOrderByDateAscTimeAsc(List<Long> groupIds);
 
-    List<Schedule> findByDateBetweenOrderByTimeAsc(Instant start, Instant end);
+    List<Schedule> findByDateBetweenAndDeletedFalseOrderByTimeAsc(Instant start, Instant end);
 
-    List<Schedule> findByDateBetweenAndStudentGroupIdInOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndStudentGroupIdInAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             List<Long> groupIds
     );
 
-    List<Schedule> findByDateBetweenAndTeacherGroup_IdInOrderByTimeAsc(
+    List<Schedule> findByDateBetweenAndTeacherGroup_IdInAndDeletedFalseOrderByTimeAsc(
             Instant start,
             Instant end,
             List<Long> groupIds
     );
 
-    List<Schedule> findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualOrderByDateAscTimeAsc(
+    List<Schedule> findByRecurrenceSeriesIdAndTeacherEntityAndDateGreaterThanEqualAndDeletedFalseOrderByDateAscTimeAsc(
             String recurrenceSeriesId,
             com.notus.backend.users.Teacher teacherEntity,
             Instant date
     );
 
-    long countByStudentGroup(com.notus.backend.attendance.group.StudentGroup group);
-    long countByTeacherGroup(com.notus.backend.teachergroups.TeacherGroup group);
+    long countByStudentGroupAndDeletedFalse(com.notus.backend.attendance.group.StudentGroup group);
+    long countByTeacherGroupAndDeletedFalse(com.notus.backend.teachergroups.TeacherGroup group);
 }
