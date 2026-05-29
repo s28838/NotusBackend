@@ -1,6 +1,7 @@
 package com.notus.backend.quiz;
 
 import com.notus.backend.quiz.dto.QuizDetailsDto;
+import com.notus.backend.quiz.dto.QuestionDto;
 import com.notus.backend.quiz.dto.QuizResponse;
 import com.notus.backend.users.Role;
 import com.notus.backend.users.Teacher;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +50,46 @@ class QuizServiceTest {
         quiz.setDescription("");
         quiz.setVersion(1);
         quiz.setArchived(false);
+    }
+
+    @Test
+    void saveQuiz_closedQuestionWithoutCorrectAnswerIsRejected() {
+        QuestionDto question = new QuestionDto();
+        question.setType(QuestionType.CLOSED);
+        question.setQuestion("Która odpowiedź jest poprawna?");
+        question.setOptions(List.of("A", "B", "C", "D"));
+        question.setCorrectAnswer("");
+
+        QuizResponse dto = new QuizResponse("Quiz", "", List.of(question));
+        when(teacherRepository.findByClerkUserId("clerk_123")).thenReturn(Optional.of(teacher));
+
+        ResponseStatusException ex = assertThrows(
+                ResponseStatusException.class,
+                () -> quizService.saveQuiz("clerk_123", dto)
+        );
+
+        assertTrue(ex.getReason().contains("Zaznacz poprawną odpowiedź"));
+        verify(quizRepository, never()).save(any());
+    }
+
+    @Test
+    void saveQuiz_closedQuestionCorrectAnswerMustMatchOption() {
+        QuestionDto question = new QuestionDto();
+        question.setType(QuestionType.CLOSED);
+        question.setQuestion("Która odpowiedź jest poprawna?");
+        question.setOptions(List.of("A", "B", "C", "D"));
+        question.setCorrectAnswer("E");
+
+        QuizResponse dto = new QuizResponse("Quiz", "", List.of(question));
+        when(teacherRepository.findByClerkUserId("clerk_123")).thenReturn(Optional.of(teacher));
+
+        ResponseStatusException ex = assertThrows(
+                ResponseStatusException.class,
+                () -> quizService.saveQuiz("clerk_123", dto)
+        );
+
+        assertTrue(ex.getReason().contains("musi być jedną z wpisanych opcji"));
+        verify(quizRepository, never()).save(any());
     }
 
     @Test

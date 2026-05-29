@@ -91,6 +91,20 @@ public class AttendanceController {
         return attendanceService.getRecordsForSession(uid, id);
     }
 
+    @GetMapping("/sessions/{id}/summary")
+    public AttendanceSessionSummaryDto getSessionSummary(Authentication auth,
+                                                        HttpServletRequest request,
+                                                        @PathVariable Long id) {
+        String uid = (String) auth.getPrincipal();
+        UserDto u = resolveUser(auth, request);
+
+        if (u.role() != Role.TEACHER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tylko TEACHER moÅ¼e przeglÄ…daÄ‡ obecnoÅ›ci");
+        }
+
+        return attendanceService.getSessionSummary(uid, id);
+    }
+
     @PostMapping("/sessions/{sessionId}/close")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void closeSession(Authentication auth,

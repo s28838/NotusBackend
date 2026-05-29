@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +227,26 @@ public class AttendanceService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public AttendanceSessionSummaryDto getSessionSummary(String teacherUid, Long sessionId) {
+        var teacher = teacherRepo.findByClerkUserId(teacherUid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Nauczyciel nie znaleziony"));
+
+        AttendanceSession session = sessionRepo.findByIdAndTeacher(sessionId, teacher)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sesja nie istnieje"));
+
+        Schedule schedule = session.getSchedule();
+        return new AttendanceSessionSummaryDto(
+                session.getId(),
+                groupSessionNumber(session, teacher),
+                subjectOf(session),
+                schedule != null ? schedule.getId() : null,
+                groupName(schedule),
+                session.getCreatedAt(),
+                session.isActive()
+        );
+    }
+
     /**
      * Parses the end time from a schedule time string ("HH:mm - HH:mm") and
      * combines it with the schedule date to produce a wall-clock Instant in
@@ -265,6 +286,65 @@ public class AttendanceService {
             return session.getSchedule().getSubject();
         }
         return session.getTitle();
+    }
+
+    private Integer groupSessionNumber(AttendanceSession targetSession, com.notus.backend.users.Teacher teacher) {
+        String targetGroupKey = groupKey(targetSession);
+        if (targetGroupKey == null) {
+            return 1;
+        }
+
+        List<AttendanceSession> groupSessions = sessionRepo.findByTeacher(teacher).stream()
+                .filter(session -> targetGroupKey.equals(groupKey(session)))
+                .sorted(Comparator
+                        .comparing(this::sessionSortInstant, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(session -> session.getId() != null ? session.getId() : Long.MAX_VALUE))
+                .toList();
+
+        for (int i = 0; i < groupSessions.size(); i++) {
+            if (Objects.equals(groupSessions.get(i).getId(), targetSession.getId())) {
+                return i + 1;
+            }
+        }
+
+        return groupSessions.size() + 1;
+    }
+
+    private Instant sessionSortInstant(AttendanceSession session) {
+        if (session.getSchedule() != null && session.getSchedule().getDate() != null) {
+            return session.getSchedule().getDate();
+        }
+        return session.getCreatedAt();
+    }
+
+    private String groupKey(AttendanceSession session) {
+        Schedule schedule = session.getSchedule();
+        if (schedule == null) {
+            return null;
+        }
+        if (schedule.getTeacherGroup() != null && schedule.getTeacherGroup().getId() != null) {
+            return "teacher-group:" + schedule.getTeacherGroup().getId();
+        }
+        if (schedule.getStudentGroup() != null && schedule.getStudentGroup().getId() != null) {
+            return "student-group:" + schedule.getStudentGroup().getId();
+        }
+        if (schedule.getId() != null) {
+            return "schedule:" + schedule.getId();
+        }
+        return null;
+    }
+
+    private String groupName(Schedule schedule) {
+        if (schedule == null) {
+            return null;
+        }
+        if (schedule.getTeacherGroup() != null) {
+            return schedule.getTeacherGroup().getName();
+        }
+        if (schedule.getStudentGroup() != null) {
+            return schedule.getStudentGroup().getCode();
+        }
+        return null;
     }
 
     private void assertStudentCanAttend(AttendanceSession session, Student student) {

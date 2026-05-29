@@ -5,9 +5,11 @@ import com.notus.backend.attendance.dto.CheckInResponse;
 import com.notus.backend.attendance.dto.CreateSessionRequest;
 import com.notus.backend.attendance.dto.CreateSessionResponse;
 import com.notus.backend.attendance.dto.QrResponse;
+import com.notus.backend.attendance.dto.AttendanceSessionSummaryDto;
 import com.notus.backend.realtime.TeacherRealtimeService;
 import com.notus.backend.schedule.Schedule;
 import com.notus.backend.schedule.ScheduleRepository;
+import com.notus.backend.teachergroups.TeacherGroup;
 import com.notus.backend.users.Student;
 import com.notus.backend.users.StudentRepository;
 import com.notus.backend.users.Teacher;
@@ -22,6 +24,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -301,5 +304,73 @@ class AttendanceServiceTest {
 
         assertTrue(resp.sessionEndsAt() >= Instant.now().getEpochSecond() + 290);
         assertEquals(resp.expiresAtEpochSeconds(), resp.sessionEndsAt());
+    }
+
+    @Test
+    void getSessionSummary_returnsGroupScopedSessionNumber() {
+        Teacher teacher = new Teacher();
+        teacher.setId(1L);
+        teacher.setClerkUserId("uid_teacher");
+
+        TeacherGroup groupA = new TeacherGroup();
+        groupA.setId(10L);
+        groupA.setName("AAI1");
+
+        TeacherGroup groupB = new TeacherGroup();
+        groupB.setId(20L);
+        groupB.setName("BBI1");
+
+        Schedule firstGroupLesson = new Schedule();
+        firstGroupLesson.setId("sched_1");
+        firstGroupLesson.setSubject("Matematyka");
+        firstGroupLesson.setDate(Instant.parse("2026-05-01T08:00:00Z"));
+        firstGroupLesson.setTeacherEntity(teacher);
+        firstGroupLesson.setTeacherGroup(groupA);
+
+        Schedule secondGroupLesson = new Schedule();
+        secondGroupLesson.setId("sched_2");
+        secondGroupLesson.setSubject("Matematyka");
+        secondGroupLesson.setDate(Instant.parse("2026-05-08T08:00:00Z"));
+        secondGroupLesson.setTeacherEntity(teacher);
+        secondGroupLesson.setTeacherGroup(groupA);
+
+        Schedule otherGroupLesson = new Schedule();
+        otherGroupLesson.setId("sched_3");
+        otherGroupLesson.setSubject("Matematyka");
+        otherGroupLesson.setDate(Instant.parse("2026-05-02T08:00:00Z"));
+        otherGroupLesson.setTeacherEntity(teacher);
+        otherGroupLesson.setTeacherGroup(groupB);
+
+        AttendanceSession first = new AttendanceSession();
+        first.setId(14L);
+        first.setTeacher(teacher);
+        first.setSchedule(firstGroupLesson);
+        first.setCreatedAt(firstGroupLesson.getDate());
+        first.setActive(false);
+
+        AttendanceSession second = new AttendanceSession();
+        second.setId(22L);
+        second.setTeacher(teacher);
+        second.setSchedule(secondGroupLesson);
+        second.setCreatedAt(secondGroupLesson.getDate());
+        second.setActive(true);
+
+        AttendanceSession other = new AttendanceSession();
+        other.setId(15L);
+        other.setTeacher(teacher);
+        other.setSchedule(otherGroupLesson);
+        other.setCreatedAt(otherGroupLesson.getDate());
+        other.setActive(false);
+
+        when(teacherRepo.findByClerkUserId("uid_teacher")).thenReturn(Optional.of(teacher));
+        when(sessionRepo.findByIdAndTeacher(22L, teacher)).thenReturn(Optional.of(second));
+        when(sessionRepo.findByTeacher(teacher)).thenReturn(List.of(first, other, second));
+
+        AttendanceSessionSummaryDto summary = attendanceService.getSessionSummary("uid_teacher", 22L);
+
+        assertEquals(22L, summary.sessionId());
+        assertEquals(2, summary.groupSessionNumber());
+        assertEquals("Matematyka", summary.sessionTitle());
+        assertEquals("AAI1", summary.groupName());
     }
 }

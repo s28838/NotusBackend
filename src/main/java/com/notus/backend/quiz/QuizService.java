@@ -10,6 +10,8 @@ import com.notus.backend.users.Teacher;
 import com.notus.backend.users.TeacherRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -94,11 +96,41 @@ public class QuizService {
         }
     }
 
+    private void validateQuestions(List<QuestionDto> questionDtos) {
+        if (questionDtos == null) return;
+
+        for (int index = 0; index < questionDtos.size(); index++) {
+            QuestionDto qDto = questionDtos.get(index);
+            QuestionType type = qDto.getType() != null ? qDto.getType() : QuestionType.CLOSED;
+            if (type != QuestionType.CLOSED) continue;
+
+            String correctAnswer = qDto.getCorrectAnswer() == null ? "" : qDto.getCorrectAnswer().trim();
+            if (correctAnswer.isBlank()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Zaznacz poprawną odpowiedź w pytaniu #" + (index + 1) + "."
+                );
+            }
+
+            boolean matchesOption = qDto.getOptions() != null && qDto.getOptions().stream()
+                    .filter(option -> option != null && !option.isBlank())
+                    .map(String::trim)
+                    .anyMatch(option -> option.equals(correctAnswer));
+            if (!matchesOption) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Poprawna odpowiedź w pytaniu #" + (index + 1) + " musi być jedną z wpisanych opcji."
+                );
+            }
+        }
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     @Transactional
     public QuizDetailsDto saveQuiz(String clerkUserId, QuizResponse dto) {
         Teacher teacher = getTeacherByClerkId(clerkUserId);
+        validateQuestions(dto.getQuestions());
         Quiz quiz = new Quiz();
         quiz.setTeacher(teacher);
         quiz.setTitle(dto.getTitle());
@@ -135,6 +167,7 @@ public class QuizService {
     @Transactional
     public QuizDetailsDto updateQuiz(String clerkUserId, Long quizId, QuizResponse dto) {
         Quiz quiz = getQuizEntity(clerkUserId, quizId);
+        validateQuestions(dto.getQuestions());
         List<QuizAssignment> assignments = quizAssignmentRepository.findByQuiz(quiz);
 
         boolean anySubmissions = assignments.stream()
