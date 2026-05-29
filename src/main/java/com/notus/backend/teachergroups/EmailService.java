@@ -41,31 +41,19 @@ public class EmailService {
         String textContent = buildTextContent(groupName, teacherName, inviteLink);
         String htmlContent = buildHtmlContent(groupName, teacherName, inviteLink);
 
-        if (brevoEmailClient.isConfigured()) {
-            brevoEmailClient.sendEmail(
-                    email,
-                    from,
-                    fromName,
-                    "Zaproszenie do grupy " + groupName + " w Notus",
-                    textContent,
-                    htmlContent
-            );
-            log.info("Group invitation email sent to {} for group {} via Brevo API", email, groupName);
-            return;
+        if (!brevoEmailClient.isConfigured()) {
+            throw new IllegalStateException("Brevo API key is not configured for group invitations");
         }
 
-        if (isSmtpConfigured()) {
-            sendSmtp(email, groupName, textContent, htmlContent);
-            return;
-        }
-
-        log.info("""
-                Group invitation email for {}
-                Group: {}
-                Teacher: {}
-                Invite link: {}
-                Link expires in 7 days.
-                """, email, groupName, teacherName, inviteLink);
+        brevoEmailClient.sendEmail(
+                email,
+                from,
+                fromName,
+                "Zaproszenie do grupy " + groupName + " w Notus",
+                textContent,
+                htmlContent
+        );
+        log.info("Group invitation email sent to {} for group {} via Brevo API", email, groupName);
     }
 
     private void sendSmtp(String email, String groupName, String textContent, String htmlContent) {

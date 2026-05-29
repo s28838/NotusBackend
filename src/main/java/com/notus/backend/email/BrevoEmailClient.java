@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,12 @@ public class BrevoEmailClient {
                     .body(request)
                     .retrieve()
                     .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            throw new IllegalStateException(
+                    "Could not send email via Brevo API. Status: %s. Body: %s"
+                            .formatted(ex.getStatusCode(), ex.getResponseBodyAsString()),
+                    ex
+            );
         } catch (RestClientException ex) {
             throw new IllegalStateException("Could not send email via Brevo API", ex);
         }

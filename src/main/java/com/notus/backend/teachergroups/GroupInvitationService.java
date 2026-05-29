@@ -36,6 +36,8 @@ public class GroupInvitationService {
     private static final Logger log = LoggerFactory.getLogger(GroupInvitationService.class);
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final String GENERIC_INVITE_ERROR = "Nie udało się zaprosić ucznia. Skontaktuj się z administratorem.";
+    private static final String BREVO_NOT_CONFIGURED_ERROR = "Wysyłka zaproszeń przez Brevo API nie jest skonfigurowana.";
+    private static final String BREVO_SEND_ERROR = "Brevo API odrzuciło wiadomość. Sprawdź klucz API i zweryfikowany adres nadawcy.";
     private static final long RESEND_COOLDOWN_HOURS = 24;
 
     private final GroupInvitationRepository invitationRepository;
@@ -113,8 +115,19 @@ public class GroupInvitationService {
         } catch (RuntimeException ex) {
             log.error("Could not send group invitation for group {}", groupId, ex);
             captureInvitationFailure(ex, "group_invitation.invite", groupId);
-            return new InviteStudentResponse(false, GENERIC_INVITE_ERROR);
+            return new InviteStudentResponse(false, invitationFailureMessage(ex));
         }
+    }
+
+    private String invitationFailureMessage(RuntimeException ex) {
+        String message = ex.getMessage() == null ? "" : ex.getMessage();
+        if (message.contains("Brevo API key is not configured")) {
+            return BREVO_NOT_CONFIGURED_ERROR;
+        }
+        if (message.contains("Brevo API")) {
+            return BREVO_SEND_ERROR;
+        }
+        return GENERIC_INVITE_ERROR;
     }
 
     private InviteStudentResponse checkExistingStudent(String email, TeacherGroup group) {

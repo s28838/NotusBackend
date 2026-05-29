@@ -26,16 +26,9 @@ SENTRY_ENVIRONMENT=production
 SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
-Set SMTP variables when real invitation and verification emails should be sent. For Brevo, use the SMTP credentials from Brevo, not the normal account password:
+Set Brevo variables when real invitation emails should be sent. Group invitations use the Brevo Transactional Email API, so `BREVO_API_KEY` is required and `MAIL_FROM` must be a sender/domain verified in Brevo:
 
 ```text
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_USERNAME=your-brevo-smtp-login
-SMTP_PASSWORD=your-brevo-smtp-key
-SMTP_AUTH=true
-SMTP_STARTTLS_ENABLE=true
-SMTP_STARTTLS_REQUIRED=true
 MAIL_FROM=verified-sender@example.com
 MAIL_FROM_NAME=Notus
 BREVO_API_KEY=your-brevo-api-key
