@@ -23,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -86,6 +87,12 @@ public class QuizAssignmentService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Brak uprawnień do tych zajęć");
         }
 
+        boolean hasActivatedAssignment = assignmentRepository.findByScheduleIdIn(List.of(req.scheduleId())).stream()
+                .anyMatch(existing -> existing.isActive() || existing.getSessionId() != null);
+        if (hasActivatedAssignment) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Po aktywacji quizu nie można zmienić go na inny dla tej lekcji");
+        }
+
         if (assignmentRepository.existsByQuizIdAndScheduleId(req.quizId(), req.scheduleId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten quiz jest już przypisany do tych zajęć");
         }
@@ -146,7 +153,16 @@ public class QuizAssignmentService {
     public List<ScheduleAssignmentDto> getAssignmentsForSchedules(List<String> scheduleIds) {
         if (scheduleIds == null || scheduleIds.isEmpty()) return List.of();
         return assignmentRepository.findByScheduleIdIn(scheduleIds).stream()
-                .map(a -> new ScheduleAssignmentDto(a.getId(), a.getScheduleId(), a.getQuiz().getTitle(), a.isActive()))
+                .sorted(Comparator
+                        .comparing(QuizAssignment::isActive).reversed()
+                        .thenComparing(QuizAssignment::getAssignedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(a -> new ScheduleAssignmentDto(
+                        a.getId(),
+                        a.getScheduleId(),
+                        a.getQuiz().getTitle(),
+                        a.isActive(),
+                        a.isActive() || a.getSessionId() != null
+                ))
                 .toList();
     }
 

@@ -22,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +69,7 @@ class QuizAssignmentServiceTest {
         when(teacherRepository.findByClerkUserId("teacher_uid")).thenReturn(Optional.of(teacher));
         when(quizRepository.findById(20L)).thenReturn(Optional.of(quiz));
         when(scheduleRepository.findById("lesson-1")).thenReturn(Optional.of(schedule));
+        when(assignmentRepository.findByScheduleIdIn(List.of("lesson-1"))).thenReturn(List.of());
         when(assignmentRepository.existsByQuizIdAndScheduleId(20L, "lesson-1")).thenReturn(false);
         when(assignmentRepository.save(any(QuizAssignment.class))).thenAnswer(invocation -> {
             QuizAssignment assignment = invocation.getArgument(0);
@@ -82,6 +84,39 @@ class QuizAssignmentServiceTest {
         assertThat(result.scheduleId()).isEqualTo("lesson-1");
         assertThat(result.scheduleSubject()).isEqualTo("Matematyka");
         assertThat(result.submissionCount()).isZero();
+    }
+
+    @Test
+    void assignQuiz_rejectsChangingQuizAfterActivation() {
+        Teacher teacher = new Teacher();
+        teacher.setId(7L);
+        teacher.setClerkUserId("teacher_uid");
+
+        Quiz quiz = new Quiz();
+        quiz.setId(21L);
+        quiz.setTeacher(teacher);
+        quiz.setTitle("Nowy quiz");
+
+        Schedule schedule = new Schedule();
+        schedule.setId("lesson-1");
+        schedule.setTeacherEntity(teacher);
+
+        QuizAssignment activated = new QuizAssignment();
+        activated.setId(99L);
+        activated.setTeacher(teacher);
+        activated.setScheduleId("lesson-1");
+        activated.setActive(true);
+        activated.setSessionId(44L);
+
+        when(teacherRepository.findByClerkUserId("teacher_uid")).thenReturn(Optional.of(teacher));
+        when(quizRepository.findById(21L)).thenReturn(Optional.of(quiz));
+        when(scheduleRepository.findById("lesson-1")).thenReturn(Optional.of(schedule));
+        when(assignmentRepository.findByScheduleIdIn(List.of("lesson-1"))).thenReturn(List.of(activated));
+
+        assertThatThrownBy(() -> service.assignQuiz("teacher_uid", new AssignQuizRequest(21L, "lesson-1")))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test
