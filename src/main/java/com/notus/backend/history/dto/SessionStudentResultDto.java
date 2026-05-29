@@ -12,4 +12,5 @@ public class SessionStudentResultDto {
     private Long submissionId;
     private Integer quizScore;
     private Integer quizTotal;
+    private boolean pendingOpenReview;
 }

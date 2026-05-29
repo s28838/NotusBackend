@@ -234,6 +234,7 @@ public class HistoryService {
                     .submissionId(qs != null ? qs.getId() : null)
                     .quizScore(qs != null ? qs.getScore() : null)
                     .quizTotal(qs != null ? qs.getTotal() : null)
+                    .pendingOpenReview(qs != null && qs.isPendingOpenReview())
                     .build());
         }
         

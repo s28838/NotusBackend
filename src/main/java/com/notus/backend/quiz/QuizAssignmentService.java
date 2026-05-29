@@ -173,6 +173,22 @@ public class QuizAssignmentService {
         Student student = getStudent(studentClerkId);
         QuizAssignment assignment = getAssignment(assignmentId);
         assertStudentCanTakeAssignment(student, assignment);
+        return buildStudentAssignment(assignment, student);
+    }
+
+    @Transactional(readOnly = true)
+    public AssignmentResultsDto getSessionAssignmentResults(String teacherClerkId, Long sessionId) {
+        Teacher teacher = getTeacher(teacherClerkId);
+        QuizAssignment assignment = assignmentRepository.findAllBySessionIdAndActiveTrue(sessionId).stream()
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Brak aktywnego quizu dla tej sesji"));
+        if (!assignment.getTeacher().equals(teacher)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Brak uprawnień");
+        }
+        return buildAssignmentResults(assignment);
+    }
+
+    private StudentAssignmentDto buildStudentAssignment(QuizAssignment assignment, Student student) {
         Schedule schedule = scheduleRepository.findById(assignment.getScheduleId()).orElse(null);
 
         List<StudentQuestionDto> questions = assignment.getQuiz().getQuestions().stream()
@@ -193,6 +209,30 @@ public class QuizAssignmentService {
                 existing != null ? existing.getScore() : null,
                 existing != null ? existing.getTotal() : null,
                 existing != null && existing.isPendingOpenReview()
+        );
+    }
+
+    private AssignmentResultsDto buildAssignmentResults(QuizAssignment assignment) {
+        Schedule schedule = scheduleRepository.findById(assignment.getScheduleId()).orElse(null);
+        List<QuizSubmission> submissions = submissionRepository.findByAssignment(assignment);
+
+        List<StudentScoreDto> scores = submissions.stream().map(s -> new StudentScoreDto(
+                s.getStudent().getName(),
+                s.getStudent().getIndexNumber(),
+                s.getScore(),
+                s.getTotal(),
+                s.getSubmittedAt(),
+                s.isPendingOpenReview(),
+                s.getId()
+        )).toList();
+
+        return new AssignmentResultsDto(
+                assignment.getId(),
+                assignment.getQuiz().getTitle(),
+                schedule != null ? schedule.getSubject() : "-",
+                schedule != null ? formatDate(schedule.getDate()) : "-",
+                schedule != null ? schedule.getTime() : "-",
+                scores
         );
     }
 
@@ -250,7 +290,7 @@ public class QuizAssignmentService {
         submissionRepository.save(saved);
 
         GradeResponse grade = hasOpenQuestions ? null : createGradeIfEnabled(assignment, student, score, questions.size());
-        return new SubmitResultDto(score, questions.size(), percentage(score, questions.size()), grade != null, grade);
+        return new SubmitResultDto(score, questions.size(), percentage(score, questions.size()), grade != null, grade, hasOpenQuestions);
     }
 
     // --- Teacher: get open answers for review ---
@@ -331,8 +371,11 @@ public class QuizAssignmentService {
             }
         }
 
-        // Add open question score to the existing closed score
-        submission.setScore(submission.getScore() + openScore);
+        int closedScore = answers.stream()
+                .filter(a -> a.getQuestion().getType() != QuestionType.OPEN)
+                .mapToInt(a -> Boolean.TRUE.equals(a.getCorrect()) ? 1 : 0)
+                .sum();
+        submission.setScore(closedScore + openScore);
         submission.setPendingOpenReview(false);
         submission.setReviewedAt(Instant.now());
         submission.setNotificationSeen(false);

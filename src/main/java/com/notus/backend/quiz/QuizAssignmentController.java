@@ -36,6 +36,12 @@ public class QuizAssignmentController {
         return service.getAssignmentResults(principal.getName(), id);
     }
 
+    /** Teacher: get detailed submission results for the active quiz in a live session */
+    @GetMapping("/session/{sessionId}/results")
+    public AssignmentResultsDto getSessionResults(Principal principal, @PathVariable Long sessionId) {
+        return service.getSessionAssignmentResults(principal.getName(), sessionId);
+    }
+
     /** Any authenticated user: check which scheduleIds have quiz assignments (for badge display) */
     @GetMapping("/by-schedules")
     public List<ScheduleAssignmentDto> getBySchedules(@RequestParam List<String> scheduleIds) {
